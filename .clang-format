@@ -1,0 +1,6 @@
+BasedOnStyle: Google
+BreakBeforeBraces: Custom
+BraceWrapping:
+    AfterClass: true
+    AfterControlStatement: Always
+    AfterFunction: true
