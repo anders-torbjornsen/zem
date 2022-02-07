@@ -1,6 +1,3 @@
 BasedOnStyle: Google
-BreakBeforeBraces: Custom
-BraceWrapping:
-    AfterClass: true
-    AfterControlStatement: Always
-    AfterFunction: true
+IndentWidth: 4
+BreakBeforeBraces: Allman
