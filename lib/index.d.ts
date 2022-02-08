@@ -1,2 +1,2 @@
-export { Deployment } from './deployment';
+export { Deployment } from "./deployment";
 //# sourceMappingURL=index.d.ts.map

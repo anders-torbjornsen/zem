@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+import * as fs from "fs";
 
 type DeployedContracts = {
     contracts: any; artifacts: any;
@@ -29,9 +29,9 @@ export class Deployment
         // prune any unneeded artifacts
         try
         {
-            if (!fs.existsSync('./deployments'))
+            if (!fs.existsSync("./deployments"))
             {
-                fs.mkdirSync('./deployments');
+                fs.mkdirSync("./deployments");
             }
 
             interface UsedBuildInfoIds
@@ -75,7 +75,7 @@ export class Deployment
         }
         catch (e)
         {
-            console.error('Deployment:writeToFile()', e);
+            console.error("Deployment:writeToFile()", e);
         }
 
         fs.writeFileSync(

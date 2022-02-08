@@ -1,8 +1,8 @@
-const {Deployment} = require('./lib/deployment.js');
+const {Deployment} = require("./lib/deployment.js");
 
 async function main()
 {
-    let deployment = new Deployment('hardhat');
+    let deployment = new Deployment("hardhat");
 
     deployment.writeToFile();
 }
