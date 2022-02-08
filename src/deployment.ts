@@ -34,32 +34,28 @@ export class Deployment
                 fs.mkdirSync("./deployments");
             }
 
-            interface UsedBuildInfoIds
-            {
-                [key: string]: boolean;
-            }
-
-            let usedBuildInfoIds: UsedBuildInfoIds = {};
+            let usedBuildInfoIds = new Set<string>();
             for (const contractId in this.deployedContracts.contracts)
             {
-                usedBuildInfoIds[this.deployedContracts.contracts[contractId]
-                                     .buildInfo] = true;
+                let deployedContract =
+                    this.deployedContracts.contracts[contractId];
+
+                usedBuildInfoIds.add(deployedContract.buildInfo);
 
                 if (this.deployedContracts.contracts[contractId]
                         .implementation != undefined)
                 {
-                    usedBuildInfoIds[this.deployedContracts
-                                         .contracts[contractId]
-                                         .implementation.buildInfo] = true;
+                    usedBuildInfoIds.add(
+                        deployedContract.implementation.buildInfo);
                 }
             }
 
-            let toPrune = [];
-            for (const buildInfo in this.deployedContracts.artifacts)
+            let toPrune: string[] = [];
+            for (const buildInfoId in this.deployedContracts.artifacts)
             {
-                if (usedBuildInfoIds[buildInfo] == undefined)
+                if (!usedBuildInfoIds.has(buildInfoId) == undefined)
                 {
-                    toPrune.push(buildInfo);
+                    toPrune.push(buildInfoId);
                 }
             }
 
@@ -68,6 +64,8 @@ export class Deployment
                 delete this.deployedContracts.artifacts[toPrune[i]];
             }
 
+            // clear output section of artifacts as it's massive, we can always
+            // rebuild it when needed
             for (const artifact in this.deployedContracts.artifacts)
             {
                 delete this.deployedContracts.artifacts[artifact].output;
