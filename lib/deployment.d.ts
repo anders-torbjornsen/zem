@@ -1,11 +1,36 @@
-declare type DeployedContracts = {
-    contracts: any;
-    artifacts: any;
-};
+import "@nomiclabs/hardhat-ethers";
+import { Contract, Signer } from "ethers";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
+interface ContractDeployConfig {
+    contract: string;
+    autoUpdate: boolean;
+}
+interface ContractDeployConfigStandard extends ContractDeployConfig {
+    id: string;
+}
+interface ContractDeployConfigERC1967 {
+    id: string;
+    proxy: ContractDeployConfig;
+    implementation: ContractDeployConfig;
+}
 export declare class Deployment {
-    jsonFilePath: string;
-    deployedContracts: DeployedContracts;
-    constructor(network: string);
+    instances: {
+        [id: string]: Contract;
+    };
+    proxyInstances: {
+        [id: string]: Contract;
+    };
+    proxyImplInstances: {
+        [id: string]: Contract;
+    };
+    private _hre;
+    private _signer;
+    private _jsonFilePath;
+    private _deployedContracts;
+    constructor(hre: HardhatRuntimeEnvironment, signer?: Signer);
+    deploy(contractConfig: ContractDeployConfigStandard, ...args: any[]): Promise<Contract>;
+    deployERC1967(contractConfig: ContractDeployConfigERC1967, getProxyConstructorArgs: (implementation: Contract) => any[], upgradeFunc: (proxy: Contract, newImplementation: Contract) => Promise<void>): Promise<Contract>;
+    private _deploy;
     writeToFile(): void;
 }
 export {};
