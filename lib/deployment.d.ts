@@ -31,6 +31,7 @@ export declare class Deployment {
     deploy(contractConfig: ContractDeployConfigStandard, ...args: any[]): Promise<Contract>;
     deployERC1967(contractConfig: ContractDeployConfigERC1967, getProxyConstructorArgs: (implementation: Contract) => any[], upgradeFunc: (proxy: Contract, newImplementation: Contract) => Promise<void>): Promise<Contract>;
     private _deploy;
+    private _getERC1967ImplementationAddress;
     writeToFile(): void;
 }
 export {};

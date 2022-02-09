@@ -143,26 +143,18 @@ export class Deployment
             proxy.address,
             this._signer);
 
-        // this is where the implementation address is stored in ERC1967
-        // proxies
         let currentImplementation: string =
-            await this._hre.ethers.provider.getStorageAt(
-                proxy.address,
-                "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc");
-        // on hardhat node (and possibly others) this returns a full 32 byte
-        // word with padded zeroes at the start, those need trimming or
-        // getAddress will fail. Ganache doesn't though, so we just chop off
-        // the last 40 chars (20 bytes) and prepend 0x.
-        currentImplementation = this._hre.ethers.utils.getAddress(
-            "0x" +
-            currentImplementation.substring(currentImplementation.length - 40));
-
+            await this._getERC1967ImplementationAddress(proxy.address);
         if (currentImplementation != implementation.address)
         {
             console.log("implementation contract has changed, updating");
             await upgradeFunc(instance, implementation);
 
-            // TODO verify it's updated after this
+            if (await this._getERC1967ImplementationAddress(proxy.address) !=
+                implementation.address)
+            {
+                throw "failed to update implementation to the correct address";
+            }
         }
 
         this.instances[contractConfig.id] = instance;
@@ -234,6 +226,27 @@ export class Deployment
         deployedContract.buildInfoId = buildInfo.id;
 
         return instance;
+    }
+
+    private async _getERC1967ImplementationAddress(proxyAddress: string):
+        Promise<string>
+    {
+        // this is where the implementation address is stored in ERC1967
+        // proxies
+        let currentImplementation: string =
+            await this._hre.ethers.provider.getStorageAt(
+                proxyAddress,
+                "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc");
+
+        // on hardhat node (and possibly others) this returns a full 32 byte
+        // word with padded zeroes at the start, those need trimming or
+        // getAddress will fail. Ganache doesn't though, so we just chop off
+        // the last 40 chars (20 bytes) and prepend 0x.
+        currentImplementation = this._hre.ethers.utils.getAddress(
+            "0x" +
+            currentImplementation.substring(currentImplementation.length - 40));
+
+        return currentImplementation;
     }
 
     writeToFile(): void
