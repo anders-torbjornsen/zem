@@ -3,21 +3,25 @@ import "@nomiclabs/hardhat-ethers"
 import * as crypto from "crypto"
 import {Contract, ContractFactory, Signer} from "ethers";
 import * as fs from "fs";
-import {HardhatRuntimeEnvironment} from "hardhat/types";
+import {Artifact, BuildInfo, HardhatRuntimeEnvironment} from "hardhat/types";
 
 interface DeployedContract
 {
     contract: string;  // fully qualified contract name
     address: string;
     bytecodeHash: string;
-    buildInfoId: string;
+    buildInfoId: string;  // artifact build info id
 }
 
-// TODO more type info for these
+interface DeployedERC1967 extends DeployedContract
+{
+    implementation: DeployedContract
+}
+
 interface DeployedContracts
 {
-    contracts: any;
-    artifacts: any;
+    contracts: {[id: string]: DeployedContract|DeployedERC1967};
+    artifacts: {[buildInfoId: string]: BuildInfo};
 }
 
 interface ContractDeployConfig
@@ -76,7 +80,8 @@ export class Deployment
     {
         if (this._deployedContracts.contracts[contractConfig.id] == undefined)
         {
-            this._deployedContracts.contracts[contractConfig.id] = {};
+            this._deployedContracts.contracts[contractConfig.id] =
+                {contract: "", address: "", bytecodeHash: "", buildInfoId: ""};
         }
 
         const instance: Contract = await this._deploy(
@@ -95,19 +100,20 @@ export class Deployment
             (proxy: Contract, newImplementation: Contract) => Promise<void>):
         Promise<Contract>
     {
-        // TODO can we use typeof for this?
         if (this._deployedContracts.contracts[contractConfig.id] == undefined)
         {
             this._deployedContracts.contracts[contractConfig.id] = {
-                implementation: {}
+                contract: "",
+                address: "",
+                bytecodeHash: "",
+                buildInfoId: "",
+                implementation: {
+                    contract: "",
+                    address: "",
+                    bytecodeHash: "",
+                    buildInfoId: ""
+                }
             };
-        }
-        else if (
-            this._deployedContracts.contracts[contractConfig.id]
-                .implementation == undefined)
-        {
-            this._deployedContracts.contracts[contractConfig.id]
-                .implementation = {};
         }
 
         const implementationConfig: ContractDeployConfigStandard = {
@@ -117,7 +123,8 @@ export class Deployment
         };
         const implementation: Contract = await this._deploy(
             implementationConfig,
-            this._deployedContracts.contracts[contractConfig.id]
+            (this._deployedContracts.contracts[contractConfig.id] as
+             DeployedERC1967)
                 .implementation);
 
         const proxyConfig: ContractDeployConfigStandard = {
@@ -174,9 +181,9 @@ export class Deployment
             contractConfig.contract} | autoUpdate=${
             contractConfig.autoUpdate}`);
 
-        const artifact =
+        const artifact: Artifact =
             await this._hre.artifacts.readArtifact(contractConfig.contract);
-        const buildInfo =
+        const buildInfo: BuildInfo|undefined =
             await this._hre.artifacts.getBuildInfo(contractConfig.contract);
         if (buildInfo == undefined)
         {
@@ -187,7 +194,7 @@ export class Deployment
         hash.update(artifact.bytecode);
         const bytecodeHash = hash.digest("hex");
 
-        if (deployedContract.address != undefined)
+        if (deployedContract.address != "")
         {
             console.log(`${contractConfig.id} is already deployed at ${
                 deployedContract.address}`);
@@ -242,16 +249,17 @@ export class Deployment
             let usedBuildInfoIds = new Set<string>();
             for (const contractId in this._deployedContracts.contracts)
             {
-                let deployedContract =
+                let deployedContract: DeployedContract =
                     this._deployedContracts.contracts[contractId];
 
-                usedBuildInfoIds.add(deployedContract.buildInfo);
+                usedBuildInfoIds.add(deployedContract.buildInfoId);
 
-                if (this._deployedContracts.contracts[contractId]
-                        .implementation != undefined)
+                let deployedERC1967: DeployedERC1967 =
+                    deployedContract as DeployedERC1967;
+                if (deployedERC1967.implementation !== undefined)
                 {
                     usedBuildInfoIds.add(
-                        deployedContract.implementation.buildInfo);
+                        deployedERC1967.implementation.buildInfoId);
                 }
             }
 
@@ -273,7 +281,8 @@ export class Deployment
             // always rebuild it when needed
             for (const artifact in this._deployedContracts.artifacts)
             {
-                delete this._deployedContracts.artifacts[artifact].output;
+                delete (this._deployedContracts.artifacts[artifact] as any)
+                    .output;
             }
         }
         catch (e)
