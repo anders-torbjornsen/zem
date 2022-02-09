@@ -129,7 +129,7 @@ export class Deployment
         const proxy: Contract = await this._deploy(
             proxyConfig,
             this._deployedContracts.contracts[contractConfig.id],
-            getProxyConstructorArgs(implementation));
+            ...getProxyConstructorArgs(implementation));
 
         const instance: Contract = await this._hre.ethers.getContractAt(
             contractConfig.implementation.contract,
@@ -170,11 +170,6 @@ export class Deployment
         deployedContract: DeployedContract,
         ...args: any[]): Promise<Contract>
     {
-        if (contractConfig.autoUpdate == undefined)
-        {
-            contractConfig.autoUpdate = true;
-        }
-
         console.log(`deploying ${contractConfig.id} | ${
             contractConfig.contract} | autoUpdate=${
             contractConfig.autoUpdate}`);
