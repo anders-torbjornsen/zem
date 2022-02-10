@@ -1,4 +1,33 @@
 {
+  "name": "@anders-t/zem",
+  "version": "1.0.0",
+  "description": "A simple EVM smart contract deployment system for Hardhat",
+  "author": "Anders Torbjørnsen <anders.torbjornsen87@gmail.com>",
+  "keywords": [
+    "Ethereum",
+    "ethers",
+    "hardhat"
+  ],
+  "license": "MIT",
+  "main": "./lib/index.js",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/anders-torbjornsen/zem.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anders-torbjornsen/zem/issues"
+  },
+  "homepage": "https://github.com/anders-torbjornsen/zem",
+  "scripts": {
+    "build": "tsc"
+  },
+  "types": "./lib/index.d.ts",
+  "files": [
+    "lib/"
+  ],
   "devDependencies": {
     "@types/mocha": "^9.1.0",
     "@types/node": "^17.0.14",
