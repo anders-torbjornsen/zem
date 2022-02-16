@@ -14,19 +14,23 @@ interface ContractDeployConfigERC1967 {
     implementation: ContractDeployConfig;
 }
 export declare class Deployment {
-    instances: {
-        [id: string]: Contract;
-    };
-    proxyInstances: {
-        [id: string]: Contract;
-    };
-    proxyImplInstances: {
-        [id: string]: Contract;
-    };
     private _hre;
     private _signer;
     private _jsonFilePath;
     private _deployedContracts;
+    private _instances;
+    private _proxyInstances;
+    private _proxyImplInstances;
+    get hre(): HardhatRuntimeEnvironment;
+    get instances(): {
+        [id: string]: Contract;
+    };
+    get proxyInstances(): {
+        [id: string]: Contract;
+    };
+    get proxyImplInstances(): {
+        [id: string]: Contract;
+    };
     constructor(hre: HardhatRuntimeEnvironment, signer?: Signer);
     deploy(contractConfig: ContractDeployConfigStandard, ...args: any[]): Promise<Contract>;
     deployERC1967(contractConfig: ContractDeployConfigERC1967, getProxyConstructorArgs: (implementation: Contract) => any[], upgradeFunc: (proxy: Contract, newImplementation: Contract) => Promise<void>): Promise<Contract>;

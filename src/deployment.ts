@@ -45,20 +45,36 @@ interface ContractDeployConfigERC1967
 
 export class Deployment
 {
-    public instances: {[id: string]: Contract};
-    public proxyInstances: {[id: string]: Contract};
-    public proxyImplInstances: {[id: string]: Contract};
-
     private _hre: HardhatRuntimeEnvironment;
     private _signer: Signer|undefined;
     private _jsonFilePath: string;
     private _deployedContracts: DeployedContracts;
+    private _instances: {[id: string]: Contract};
+    private _proxyInstances: {[id: string]: Contract};
+    private _proxyImplInstances: {[id: string]: Contract};
+
+    public get hre()
+    {
+        return this._hre;
+    }
+    public get instances()
+    {
+        return this._instances;
+    }
+    public get proxyInstances()
+    {
+        return this._proxyInstances;
+    }
+    public get proxyImplInstances()
+    {
+        return this._proxyImplInstances;
+    }
 
     constructor(hre: HardhatRuntimeEnvironment, signer?: Signer)
     {
-        this.instances = {};
-        this.proxyInstances = {};
-        this.proxyImplInstances = {};
+        this._instances = {};
+        this._proxyInstances = {};
+        this._proxyImplInstances = {};
 
         this._hre = hre;
         this._signer = signer;
@@ -89,7 +105,7 @@ export class Deployment
             this._deployedContracts.contracts[contractConfig.id],
             ...args);
 
-        this.instances[contractConfig.id] = instance;
+        this._instances[contractConfig.id] = instance;
         return instance;
     }
 
@@ -157,9 +173,9 @@ export class Deployment
             }
         }
 
-        this.instances[contractConfig.id] = instance;
-        this.proxyInstances[contractConfig.id] = proxy;
-        this.proxyImplInstances[contractConfig.id] = implementation;
+        this._instances[contractConfig.id] = instance;
+        this._proxyInstances[contractConfig.id] = proxy;
+        this._proxyImplInstances[contractConfig.id] = implementation;
 
         return instance;
     }
