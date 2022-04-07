@@ -10,7 +10,7 @@ Zem manages deployments, storing what contracts are deployed where, the versions
 
 ## Usage
 
-```
+```ts
 // deploy.ts
 // This script can be run as many times as you like, it will only deploy what isn't already deployed
 
