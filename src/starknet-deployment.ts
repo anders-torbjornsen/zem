@@ -36,21 +36,48 @@ export class StarknetDeployment
     }
 
     public async deploy(
-        config: ContractDeployConfigStandard,
+        contractConfig: ContractDeployConfigStandard,
         constructorArguments?: StringMap,
         options?: DeployOptions): Promise<StarknetContract>
     {
+        console.log(`deploying ${contractConfig.id} | ${
+            contractConfig.contract} | autoUpdate=${
+            contractConfig.autoUpdate}`);
+
         const contractFactory =
-            await this.hre.starknet.getContractFactory(config.contract);
-        const instance =
-            await contractFactory.deploy(constructorArguments, options);
+            await this.hre.starknet.getContractFactory(contractConfig.contract);
 
-        this._json.contracts[config.id] = {
-            contract: config.contract,
-            address: instance.address
-        };
+        const contractJson = this._json.contracts[contractConfig.id];
+        if (contractJson !== undefined)
+        {
+            console.log(`${contractConfig.id} is already deployed at ${
+                contractJson.address}`);
 
-        return instance;
+            if (contractJson.contract != contractConfig.contract)
+            {
+                throw `attempting to deploy contract '${
+                    contractConfig.contract}' with id '${
+                    contractConfig.id}' but existing contract is '${
+                    contractJson
+                        .contract}', if that's intentional then change the id of the contract in the deployment json or remote it entirely.`;
+            }
+
+            return contractFactory.getContractAt(contractJson.address);
+        }
+        else
+        {
+            const instance =
+                await contractFactory.deploy(constructorArguments, options);
+
+            console.log("deployed to", instance.address);
+
+            this._json.contracts[contractConfig.id] = {
+                contract: contractConfig.contract,
+                address: instance.address
+            };
+
+            return instance;
+        }
     }
 
     public writeToFile(): void

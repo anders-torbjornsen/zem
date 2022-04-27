@@ -11,7 +11,7 @@ export declare class StarknetDeployment {
     };
     private _json;
     constructor(hre: HardhatRuntimeEnvironment);
-    deploy(config: ContractDeployConfigStandard, constructorArguments?: StringMap, options?: DeployOptions): Promise<StarknetContract>;
+    deploy(contractConfig: ContractDeployConfigStandard, constructorArguments?: StringMap, options?: DeployOptions): Promise<StarknetContract>;
     writeToFile(): void;
 }
 //# sourceMappingURL=starknet-deployment.d.ts.map
