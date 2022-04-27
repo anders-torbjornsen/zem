@@ -1,6 +1,7 @@
 import "@shardlabs/starknet-hardhat-plugin/dist/type-extensions"
 
 import {DeployOptions} from "@shardlabs/starknet-hardhat-plugin/dist/types";
+import * as crypto from "crypto"
 import * as fs from "fs";
 import {HardhatRuntimeEnvironment, StarknetContract, StringMap} from "hardhat/types";
 
@@ -14,8 +15,12 @@ export class StarknetDeployment
     public readonly instances: {[id: string]: StarknetContract};
     // using a similar shape to the json of L1
     // deployments for consistency
-    private _json:
-        {contracts: {[id: string]: {contract: string, address: string}}};
+    private _json: {
+        contracts: {
+            [id: string]:
+                {contract: string, address: string, bytecodeHash: string}
+        }
+    };
 
     constructor(hre: HardhatRuntimeEnvironment)
     {
@@ -47,6 +52,13 @@ export class StarknetDeployment
         const contractFactory =
             await this.hre.starknet.getContractFactory(contractConfig.contract);
 
+        // HACK starknet-hardhat-plugin doesn't expose this
+        const contractMetadataPath = (contractFactory as any).metadataPath;
+        const hash = crypto.createHash("sha256");
+        hash.update(JSON.parse(fs.readFileSync(contractMetadataPath).toString())
+                        .program.data.join());
+        const bytecodeHash = hash.digest("hex");
+
         const contractJson = this._json.contracts[contractConfig.id];
         if (contractJson !== undefined)
         {
@@ -62,22 +74,27 @@ export class StarknetDeployment
                         .contract}', if that's intentional then change the id of the contract in the deployment json or remote it entirely.`;
             }
 
-            return contractFactory.getContractAt(contractJson.address);
+            if (contractJson.bytecodeHash == bytecodeHash ||
+                !contractConfig.autoUpdate)
+            {
+                return contractFactory.getContractAt(contractJson.address);
+            }
+            console.log(`${contractConfig.id} is out of date (${
+                contractJson.bytecodeHash}), redeploying (${bytecodeHash})`);
         }
-        else
-        {
-            const instance =
-                await contractFactory.deploy(constructorArguments, options);
 
-            console.log("deployed to", instance.address);
+        const instance =
+            await contractFactory.deploy(constructorArguments, options);
 
-            this._json.contracts[contractConfig.id] = {
-                contract: contractConfig.contract,
-                address: instance.address
-            };
+        console.log("deployed to", instance.address);
 
-            return instance;
-        }
+        this._json.contracts[contractConfig.id] = {
+            contract: contractConfig.contract,
+            address: instance.address,
+            bytecodeHash: bytecodeHash
+        };
+
+        return instance;
     }
 
     public writeToFile(): void
