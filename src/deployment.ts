@@ -30,8 +30,7 @@ interface ContractDeployConfig
     autoUpdate: boolean;  // whether to auto-redeploy this when it has changed
 }
 
-interface ContractDeployConfigStandard extends ContractDeployConfig
-{
+export interface ContractDeployConfigStandard extends ContractDeployConfig {
     id: string;  // id unique to deployment which identifies this contract
                  // instance
 }

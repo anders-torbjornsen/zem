@@ -5,7 +5,7 @@ interface ContractDeployConfig {
     contract: string;
     autoUpdate: boolean;
 }
-interface ContractDeployConfigStandard extends ContractDeployConfig {
+export interface ContractDeployConfigStandard extends ContractDeployConfig {
     id: string;
 }
 interface ContractDeployConfigERC1967 {
