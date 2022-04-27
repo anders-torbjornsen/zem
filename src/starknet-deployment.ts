@@ -1,5 +1,6 @@
 import "@shardlabs/starknet-hardhat-plugin/dist/type-extensions"
 
+import {Abi} from "@shardlabs/starknet-hardhat-plugin/dist/starknet-types";
 import {DeployOptions} from "@shardlabs/starknet-hardhat-plugin/dist/types";
 import * as crypto from "crypto"
 import * as fs from "fs";
@@ -19,7 +20,8 @@ export class StarknetDeployment
         contracts: {
             [id: string]:
                 {contract: string, address: string, bytecodeHash: string}
-        }
+        },
+        abis: {[id: string]: Abi}
     };
 
     constructor(hre: HardhatRuntimeEnvironment)
@@ -36,7 +38,7 @@ export class StarknetDeployment
         }
         else
         {
-            this._json = {contracts: {}};
+            this._json = {contracts: {}, abis: {}};
         }
     }
 
@@ -54,9 +56,10 @@ export class StarknetDeployment
 
         // HACK starknet-hardhat-plugin doesn't expose this
         const contractMetadataPath = (contractFactory as any).metadataPath;
+        const contractMetadata =
+            JSON.parse(fs.readFileSync(contractMetadataPath).toString());
         const hash = crypto.createHash("sha256");
-        hash.update(JSON.parse(fs.readFileSync(contractMetadataPath).toString())
-                        .program.data.join());
+        hash.update(contractMetadata.program.data.join());
         const bytecodeHash = hash.digest("hex");
 
         const contractJson = this._json.contracts[contractConfig.id];
@@ -93,6 +96,7 @@ export class StarknetDeployment
             address: instance.address,
             bytecodeHash: bytecodeHash
         };
+        this._json.abis[contractConfig.id] = contractMetadata.abi;
 
         return instance;
     }
