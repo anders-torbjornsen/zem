@@ -91,7 +91,7 @@ async function main()
     deployment = new StarknetDeployment(hre);
 
     const contract: StarknetContract = await deployment.deploy({
-        id: "regularContract",
+        id: "contract",
         contract: "contracts/Contract.cairo",
         autoUpdate: true
     }, {"constructorArg1": 1, "constructorArg2": 42});
