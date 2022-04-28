@@ -79,7 +79,7 @@ main()
 // This script can be run as many times as you like, it will only deploy what isn't already deployed
 
 import * as hre from "hardhat"
-import { StarknetDeployment } from "@anders-t/zem"
+import { StarknetDeployment } from "@anders-t/zem" // if you don't want to install hardhat-ethers then you can change this to "@anders-t/zem/lib/starknet-deployment"
 import { StarknetContract } from "hardhat/types";
 
 let deployment: Deployment;
