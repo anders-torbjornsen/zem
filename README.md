@@ -1,6 +1,6 @@
 # Zem
 
-An Ethereum smart contracts deployment system for [Hardhat](https://github.com/nomiclabs/hardhat).
+An Ethereum/Starknet smart contracts deployment system for [Hardhat](https://github.com/nomiclabs/hardhat).
 
 Zem manages deployments, storing what contracts are deployed where, the versions of those contracts and can automatically redeploy them if desired. Also handles ERC1967 upgradeable proxy contracts. It stores a json file on a per-network basis to keep track of all of this.
 
@@ -8,7 +8,7 @@ Zem manages deployments, storing what contracts are deployed where, the versions
 
 `npm install --save-dev @anders-t/zem`
 
-## Usage
+## Ethereum Example
 
 ```ts
 // deploy.ts
@@ -57,6 +57,47 @@ async function main()
     },
     proxyConstructorArgs,
     upgradeContract);
+}
+
+main()
+    .catch((e) =>
+    {
+        console.error(e);
+    }).finally(() =>
+    {
+        if (deployment != undefined)
+        {
+            deployment.writeToFile();
+        }
+    });
+```
+
+## Starknet Example
+
+```ts
+// deploy.ts
+// This script can be run as many times as you like, it will only deploy what isn't already deployed
+
+import * as hre from "hardhat"
+import { StarknetDeployment } from "@anders-t/zem"
+import { StarknetContract } from "hardhat/types";
+
+let deployment: Deployment;
+
+async function main()
+{
+    await hre.run("starknet-compile");
+
+    deployment = new StarknetDeployment(hre);
+
+    const contract: StarknetContract = await deployment.deploy({
+        id: "regularContract",
+        contract: "contracts/Contract.cairo",
+        autoUpdate: true
+    }, {"constructorArg1": 1, "constructorArg2": 42});
+
+    console.log(await contract.call("get_number"));
+    await contract.invoke("set_number", {"number": 21});
 }
 
 main()
