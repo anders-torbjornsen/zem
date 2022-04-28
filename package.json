@@ -1,8 +1,8 @@
 {
   "name": "@anders-t/zem",
-  "version": "1.0.1",
-  "description": "A simple EVM smart contract deployment system for Hardhat",
-  "author": "Anders Torbjørnsen <anders.torbjornsen87@gmail.com>",
+  "version": "1.0.2",
+  "description": "A simple EVM & Starknet smart contract deployment system for Hardhat",
+  "author": "Anders-T | 0x80.eth <anders.torbjornsen87@gmail.com>",
   "keywords": [
     "Ethereum",
     "ethers",
