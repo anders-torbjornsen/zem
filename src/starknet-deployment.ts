@@ -80,7 +80,8 @@ export class StarknetDeployment
             if (contractJson.bytecodeHash == bytecodeHash ||
                 !contractConfig.autoUpdate)
             {
-                return contractFactory.getContractAt(contractJson.address);
+                this.instances[contractConfig.id] = contractFactory.getContractAt(contractJson.address);
+                return this.instances[contractConfig.id];
             }
             console.log(`${contractConfig.id} is out of date (${
                 contractJson.bytecodeHash}), redeploying (${bytecodeHash})`);
@@ -90,6 +91,8 @@ export class StarknetDeployment
             await contractFactory.deploy(constructorArguments, options);
 
         console.log("deployed to", instance.address);
+
+        this.instances[contractConfig.id] = instance;
 
         this._json.contracts[contractConfig.id] = {
             contract: contractConfig.contract,

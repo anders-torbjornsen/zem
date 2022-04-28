@@ -98,6 +98,9 @@ async function main()
 
     console.log(await contract.call("get_number"));
     await contract.invoke("set_number", {"number": 21});
+
+    // you can also get contract instances from the deployment
+    console.log(await deployment.instances.contract.call("get_number"));
 }
 
 main()
