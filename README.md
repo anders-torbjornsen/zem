@@ -1,8 +1,8 @@
 # Zem
 
-An Ethereum/Starknet smart contracts deployment system for [Hardhat](https://github.com/nomiclabs/hardhat).
+An Ethereum/Starknet smart contracts deployment system for [Hardhat](https://github.com/nomiclabs/hardhat) written in Typescript.
 
-Zem manages deployments, storing what contracts are deployed where, the versions of those contracts and can automatically redeploy them if desired. Also handles ERC1967 upgradeable proxy contracts. It stores a json file on a per-network basis to keep track of all of this.
+Create a deployment script for your project, create a Zem Deployment object and use it to deploy your contracts, and at the end of the script call `writeToFile()` on your Deployment object (see below for examples). The first time you run your deployment script, your contracts will be deployed, but on subsequent runs Zem will load the saved file and use the existing instances of your contracts which were deployed before. The standard input json is also stored to the deployment file, which means you automatically have information you might need for debugging, verifying, etc. Zem will detect if a deployed contract is outdated, and can optionally automatically redeploy your contracts, including handling ERC1967 proxy contracts.
 
 ## Installation
 
