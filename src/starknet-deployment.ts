@@ -2,7 +2,7 @@ import * as crypto from "crypto";
 import * as fs from "fs";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { ContractDeployConfigStandard } from "./deployment";
-import { Contract, Abi, RawCalldata } from "starknet";
+import { Contract, Abi } from "starknet";
 import "@playmint/hardhat-starknetjs";
 import { BigNumberish } from "starknet/dist/utils/number";
 
@@ -37,7 +37,8 @@ export class StarknetDeployment {
 
     public async deploy(
         contractConfig: ContractDeployConfigStandard,
-        constructorCalldata?: RawCalldata,
+        constructorName?: string,
+        constructorArgs?: any[],
         addressSalt?: BigNumberish): Promise<Contract> {
         console.log(`deploying ${contractConfig.id} | ${contractConfig.contract} | autoUpdate=${contractConfig.autoUpdate}`);
 
@@ -65,6 +66,10 @@ export class StarknetDeployment {
             console.log(`${contractConfig.id} is out of date (${contractJson.bytecodeHash}), redeploying (${bytecodeHash})`);
         }
 
+        let constructorCalldata = undefined;
+        if (constructorName !== undefined && constructorArgs !== undefined) {
+            constructorCalldata = contractFactory.attach("").populate(constructorName, constructorArgs).calldata;
+        }
         const instance =
             await (await contractFactory.deploy(constructorCalldata, addressSalt)).deployed();
 
