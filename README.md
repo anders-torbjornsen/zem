@@ -94,9 +94,7 @@ async function main()
         contract: "Contract.cairo",
         autoUpdate: true
     }, 
-    "constructor",  // the name of the constructor function in the StarkNet contract
-                    // (omit this if there is no constructor)
-    [1, 42]);       // array of constructor args
+    [1, 42]); // array of constructor args (omit this if there's no constructor)
 
     console.log(await contract.get_number());
     await contract.set_number(21);
