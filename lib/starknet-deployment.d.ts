@@ -12,7 +12,7 @@ export declare class StarknetDeployment {
     };
     private _json;
     constructor(hre: HardhatRuntimeEnvironment);
-    deploy(contractConfig: ContractDeployConfigStandard, constructorName?: string, constructorArgs?: any[], addressSalt?: BigNumberish): Promise<Contract>;
+    deploy(contractConfig: ContractDeployConfigStandard, constructorArgs?: any[], addressSalt?: BigNumberish): Promise<Contract>;
     writeToFile(): void;
 }
 //# sourceMappingURL=starknet-deployment.d.ts.map

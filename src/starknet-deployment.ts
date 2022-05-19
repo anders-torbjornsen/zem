@@ -37,7 +37,6 @@ export class StarknetDeployment {
 
     public async deploy(
         contractConfig: ContractDeployConfigStandard,
-        constructorName?: string,
         constructorArgs?: any[],
         addressSalt?: BigNumberish): Promise<Contract> {
         console.log(`deploying ${contractConfig.id} | ${contractConfig.contract} | autoUpdate=${contractConfig.autoUpdate}`);
@@ -67,8 +66,14 @@ export class StarknetDeployment {
         }
 
         let constructorCalldata = undefined;
-        if (constructorName !== undefined && constructorArgs !== undefined) {
-            constructorCalldata = contractFactory.attach("").populate(constructorName, constructorArgs).calldata;
+        if (constructorArgs !== undefined) {
+            const constructor = contractFactory.compiledContract.abi.find((abiItem) => {
+                return abiItem.type == "constructor";
+            });
+            if (constructor === undefined) {
+                throw "Constructor args were supplied but no constructor was found in Abi";
+            }
+            constructorCalldata = contractFactory.attach("").populate(constructor.name, constructorArgs).calldata;
         }
         const instance =
             await (await contractFactory.deploy(constructorCalldata, addressSalt)).deployed();
