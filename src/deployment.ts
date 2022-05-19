@@ -1,76 +1,65 @@
 import "@nomiclabs/hardhat-ethers"
 
 import * as crypto from "crypto"
-import {Contract, ContractFactory, Signer} from "ethers";
+import { Contract, ContractFactory, Signer } from "ethers";
 import * as fs from "fs";
-import {Artifact, BuildInfo, HardhatRuntimeEnvironment} from "hardhat/types";
+import { Artifact, BuildInfo, HardhatRuntimeEnvironment } from "hardhat/types";
 
-interface DeployedContract
-{
+interface DeployedContract {
     contract: string;  // fully qualified contract name
     address: string;
     bytecodeHash: string;
     buildInfoId: string;  // artifact build info id
 }
 
-interface DeployedERC1967 extends DeployedContract
-{
+interface DeployedERC1967 extends DeployedContract {
     implementation: DeployedContract
 }
 
-interface DeployedContracts
-{
-    contracts: {[id: string]: DeployedContract|DeployedERC1967};
-    artifacts: {[buildInfoId: string]: BuildInfo};
+interface DeployedContracts {
+    contracts: { [id: string]: DeployedContract | DeployedERC1967 };
+    artifacts: { [buildInfoId: string]: BuildInfo };
 }
 
-interface ContractDeployConfig
-{
+interface ContractDeployConfig {
     contract: string;     // fully qualified contract to use
     autoUpdate: boolean;  // whether to auto-redeploy this when it has changed
 }
 
 export interface ContractDeployConfigStandard extends ContractDeployConfig {
     id: string;  // id unique to deployment which identifies this contract
-                 // instance
+    // instance
 }
 
-interface ContractDeployConfigERC1967
-{
+interface ContractDeployConfigERC1967 {
     id: string;
     proxy: ContractDeployConfig;
     implementation: ContractDeployConfig;
 }
 
-export class Deployment
-{
+export class Deployment {
     private _hre: HardhatRuntimeEnvironment;
-    private _signer: Signer|undefined;
+    private _signer: Signer | undefined;
     private _jsonFilePath: string;
     private _deployedContracts: DeployedContracts;
-    private _instances: {[id: string]: Contract};
-    private _proxyInstances: {[id: string]: Contract};
-    private _proxyImplInstances: {[id: string]: Contract};
+    private _instances: { [id: string]: Contract };
+    private _proxyInstances: { [id: string]: Contract };
+    private _proxyImplInstances: { [id: string]: Contract };
 
-    public get hre()
-    {
+    public get hre() {
         return this._hre;
     }
-    public get instances()
-    {
+    public get instances() {
         return this._instances;
     }
-    public get proxyInstances()
-    {
+    public get proxyInstances() {
         return this._proxyInstances;
     }
-    public get proxyImplInstances()
-    {
+    public get proxyImplInstances() {
         return this._proxyImplInstances;
     }
 
-    constructor(hre: HardhatRuntimeEnvironment, signer?: Signer)
-    {
+    constructor(hre: HardhatRuntimeEnvironment, signer?: Signer) {
         this._instances = {};
         this._proxyInstances = {};
         this._proxyImplInstances = {};
@@ -79,24 +68,20 @@ export class Deployment
         this._signer = signer;
         this._jsonFilePath = `./deployments/${hre.network.name}.json`;
 
-        if (fs.existsSync(this._jsonFilePath))
-        {
+        if (fs.existsSync(this._jsonFilePath)) {
             this._deployedContracts =
                 JSON.parse(fs.readFileSync(this._jsonFilePath).toString());
         }
-        else
-        {
-            this._deployedContracts = {contracts: {}, artifacts: {}};
+        else {
+            this._deployedContracts = { contracts: {}, artifacts: {} };
         }
     }
 
     async deploy(contractConfig: ContractDeployConfigStandard, ...args: any[]):
-        Promise<Contract>
-    {
-        if (this._deployedContracts.contracts[contractConfig.id] == undefined)
-        {
+        Promise<Contract> {
+        if (this._deployedContracts.contracts[contractConfig.id] == undefined) {
             this._deployedContracts.contracts[contractConfig.id] =
-                {contract: "", address: "", bytecodeHash: "", buildInfoId: ""};
+                { contract: "", address: "", bytecodeHash: "", buildInfoId: "" };
         }
 
         const instance: Contract = await this._deploy(
@@ -113,10 +98,8 @@ export class Deployment
         getProxyConstructorArgs: (implementation: Contract) => any[],
         upgradeFunc:
             (proxy: Contract, newImplementation: Contract) => Promise<void>):
-        Promise<Contract>
-    {
-        if (this._deployedContracts.contracts[contractConfig.id] == undefined)
-        {
+        Promise<Contract> {
+        if (this._deployedContracts.contracts[contractConfig.id] == undefined) {
             this._deployedContracts.contracts[contractConfig.id] = {
                 contract: "",
                 address: "",
@@ -139,7 +122,7 @@ export class Deployment
         const implementation: Contract = await this._deploy(
             implementationConfig,
             (this._deployedContracts.contracts[contractConfig.id] as
-             DeployedERC1967)
+                DeployedERC1967)
                 .implementation);
 
         const proxyConfig: ContractDeployConfigStandard = {
@@ -160,14 +143,12 @@ export class Deployment
 
         let currentImplementation: string =
             await this._getERC1967ImplementationAddress(proxy.address);
-        if (currentImplementation != implementation.address)
-        {
+        if (currentImplementation != implementation.address) {
             console.log("implementation contract has changed, updating");
             await upgradeFunc(instance, implementation);
 
             if (await this._getERC1967ImplementationAddress(proxy.address) !=
-                implementation.address)
-            {
+                implementation.address) {
                 throw "failed to update implementation to the correct address";
             }
         }
@@ -182,18 +163,14 @@ export class Deployment
     private async _deploy(
         contractConfig: ContractDeployConfigStandard,
         deployedContract: DeployedContract,
-        ...args: any[]): Promise<Contract>
-    {
-        console.log(`deploying ${contractConfig.id} | ${
-            contractConfig.contract} | autoUpdate=${
-            contractConfig.autoUpdate}`);
+        ...args: any[]): Promise<Contract> {
+        console.log(`deploying ${contractConfig.id} | ${contractConfig.contract} | autoUpdate=${contractConfig.autoUpdate}`);
 
         const artifact: Artifact =
             await this._hre.artifacts.readArtifact(contractConfig.contract);
-        const buildInfo: BuildInfo|undefined =
+        const buildInfo: BuildInfo | undefined =
             await this._hre.artifacts.getBuildInfo(contractConfig.contract);
-        if (buildInfo == undefined)
-        {
+        if (buildInfo == undefined) {
             throw "buildInfo not found for " + contractConfig.contract;
         }
 
@@ -201,20 +178,14 @@ export class Deployment
         hash.update(artifact.bytecode);
         const bytecodeHash = hash.digest("hex");
 
-        if (deployedContract.address != "")
-        {
-            console.log(`${contractConfig.id} is already deployed at ${
-                deployedContract.address}`);
+        if (deployedContract.address != "") {
+            console.log(`${contractConfig.id} is already deployed at ${deployedContract.address}`);
 
             if (deployedContract.bytecodeHash != bytecodeHash &&
-                contractConfig.autoUpdate)
-            {
-                console.log(`${contractConfig.id} is out of date (${
-                    deployedContract.bytecodeHash}), redeploying (${
-                    bytecodeHash})`);
+                contractConfig.autoUpdate) {
+                console.log(`${contractConfig.id} is out of date (${deployedContract.bytecodeHash}), redeploying (${bytecodeHash})`);
             }
-            else
-            {
+            else {
                 return await this._hre.ethers.getContractAt(
                     contractConfig.contract,
                     deployedContract.address,
@@ -230,8 +201,7 @@ export class Deployment
 
         console.log("deployed to", instance.address);
 
-        if (this._deployedContracts.artifacts[buildInfo.id] == undefined)
-        {
+        if (this._deployedContracts.artifacts[buildInfo.id] == undefined) {
             this._deployedContracts.artifacts[buildInfo.id] = buildInfo;
         }
 
@@ -244,8 +214,7 @@ export class Deployment
     }
 
     private async _getERC1967ImplementationAddress(proxyAddress: string):
-        Promise<string>
-    {
+        Promise<string> {
         // this is where the implementation address is stored in ERC1967
         // proxies
         let currentImplementation: string =
@@ -264,19 +233,15 @@ export class Deployment
         return currentImplementation;
     }
 
-    writeToFile(): void
-    {
+    writeToFile(): void {
         // prune any unneeded artifacts
-        try
-        {
-            if (!fs.existsSync("./deployments"))
-            {
+        try {
+            if (!fs.existsSync("./deployments")) {
                 fs.mkdirSync("./deployments");
             }
 
             let usedBuildInfoIds = new Set<string>();
-            for (const contractId in this._deployedContracts.contracts)
-            {
+            for (const contractId in this._deployedContracts.contracts) {
                 let deployedContract: DeployedContract =
                     this._deployedContracts.contracts[contractId];
 
@@ -284,37 +249,31 @@ export class Deployment
 
                 let deployedERC1967: DeployedERC1967 =
                     deployedContract as DeployedERC1967;
-                if (deployedERC1967.implementation !== undefined)
-                {
+                if (deployedERC1967.implementation !== undefined) {
                     usedBuildInfoIds.add(
                         deployedERC1967.implementation.buildInfoId);
                 }
             }
 
             let toPrune: string[] = [];
-            for (const buildInfoId in this._deployedContracts.artifacts)
-            {
-                if (!usedBuildInfoIds.has(buildInfoId) == undefined)
-                {
+            for (const buildInfoId in this._deployedContracts.artifacts) {
+                if (!usedBuildInfoIds.has(buildInfoId) == undefined) {
                     toPrune.push(buildInfoId);
                 }
             }
 
-            for (let i = 0; i < toPrune.length; ++i)
-            {
+            for (let i = 0; i < toPrune.length; ++i) {
                 delete this._deployedContracts.artifacts[toPrune[i]];
             }
 
             // clear output section of artifacts as it's massive, we can
             // always rebuild it when needed
-            for (const artifact in this._deployedContracts.artifacts)
-            {
+            for (const artifact in this._deployedContracts.artifacts) {
                 delete (this._deployedContracts.artifacts[artifact] as any)
                     .output;
             }
         }
-        catch (e)
-        {
+        catch (e) {
             console.error("Deployment:writeToFile()", e);
         }
 

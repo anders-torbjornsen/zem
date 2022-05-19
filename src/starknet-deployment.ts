@@ -1,55 +1,47 @@
 import "@shardlabs/starknet-hardhat-plugin/dist/type-extensions"
 
-import {Abi} from "@shardlabs/starknet-hardhat-plugin/dist/starknet-types";
-import {DeployOptions} from "@shardlabs/starknet-hardhat-plugin/dist/types";
+import { Abi } from "@shardlabs/starknet-hardhat-plugin/dist/starknet-types";
+import { DeployOptions } from "@shardlabs/starknet-hardhat-plugin/dist/types";
 import * as crypto from "crypto"
 import * as fs from "fs";
-import {HardhatRuntimeEnvironment, StarknetContract, StringMap} from "hardhat/types";
+import { HardhatRuntimeEnvironment, StarknetContract, StringMap } from "hardhat/types";
 
-import {ContractDeployConfigStandard} from "./deployment"
+import { ContractDeployConfigStandard } from "./deployment"
 
-export class StarknetDeployment
-{
+export class StarknetDeployment {
     private static readonly DEPLOYMENTS_DIR: string = "./starknet-deployments";
     public readonly hre: HardhatRuntimeEnvironment;
     public readonly jsonFilePath: string;
-    public readonly instances: {[id: string]: StarknetContract};
+    public readonly instances: { [id: string]: StarknetContract };
     // using a similar shape to the json of L1
     // deployments for consistency
     private _json: {
         contracts: {
             [id: string]:
-                {contract: string, address: string, bytecodeHash: string}
+            { contract: string, address: string, bytecodeHash: string }
         },
-        abis: {[id: string]: Abi}
+        abis: { [id: string]: Abi }
     };
 
-    constructor(hre: HardhatRuntimeEnvironment)
-    {
+    constructor(hre: HardhatRuntimeEnvironment) {
         this.hre = hre;
-        this.jsonFilePath = `${StarknetDeployment.DEPLOYMENTS_DIR}/${
-            hre.config.starknet.network}.json`;
+        this.jsonFilePath = `${StarknetDeployment.DEPLOYMENTS_DIR}/${hre.config.starknet.network}.json`;
         this.instances = {};
 
-        if (fs.existsSync(this.jsonFilePath))
-        {
+        if (fs.existsSync(this.jsonFilePath)) {
             this._json =
                 JSON.parse(fs.readFileSync(this.jsonFilePath).toString());
         }
-        else
-        {
-            this._json = {contracts: {}, abis: {}};
+        else {
+            this._json = { contracts: {}, abis: {} };
         }
     }
 
     public async deploy(
         contractConfig: ContractDeployConfigStandard,
         constructorArguments?: StringMap,
-        options?: DeployOptions): Promise<StarknetContract>
-    {
-        console.log(`deploying ${contractConfig.id} | ${
-            contractConfig.contract} | autoUpdate=${
-            contractConfig.autoUpdate}`);
+        options?: DeployOptions): Promise<StarknetContract> {
+        console.log(`deploying ${contractConfig.id} | ${contractConfig.contract} | autoUpdate=${contractConfig.autoUpdate}`);
 
         const contractFactory =
             await this.hre.starknet.getContractFactory(contractConfig.contract);
@@ -63,28 +55,20 @@ export class StarknetDeployment
         const bytecodeHash = hash.digest("hex");
 
         const contractJson = this._json.contracts[contractConfig.id];
-        if (contractJson !== undefined)
-        {
-            console.log(`${contractConfig.id} is already deployed at ${
-                contractJson.address}`);
+        if (contractJson !== undefined) {
+            console.log(`${contractConfig.id} is already deployed at ${contractJson.address}`);
 
-            if (contractJson.contract != contractConfig.contract)
-            {
-                throw `attempting to deploy contract '${
-                    contractConfig.contract}' with id '${
-                    contractConfig.id}' but existing contract is '${
-                    contractJson
-                        .contract}', if that's intentional then change the id of the contract in the deployment json or remote it entirely.`;
+            if (contractJson.contract != contractConfig.contract) {
+                throw `attempting to deploy contract '${contractConfig.contract}' with id '${contractConfig.id}' but existing contract is '${contractJson
+                    .contract}', if that's intentional then change the id of the contract in the deployment json or remote it entirely.`;
             }
 
             if (contractJson.bytecodeHash == bytecodeHash ||
-                !contractConfig.autoUpdate)
-            {
+                !contractConfig.autoUpdate) {
                 this.instances[contractConfig.id] = contractFactory.getContractAt(contractJson.address);
                 return this.instances[contractConfig.id];
             }
-            console.log(`${contractConfig.id} is out of date (${
-                contractJson.bytecodeHash}), redeploying (${bytecodeHash})`);
+            console.log(`${contractConfig.id} is out of date (${contractJson.bytecodeHash}), redeploying (${bytecodeHash})`);
         }
 
         const instance =
@@ -104,10 +88,8 @@ export class StarknetDeployment
         return instance;
     }
 
-    public writeToFile(): void
-    {
-        if (!fs.existsSync(StarknetDeployment.DEPLOYMENTS_DIR))
-        {
+    public writeToFile(): void {
+        if (!fs.existsSync(StarknetDeployment.DEPLOYMENTS_DIR)) {
             fs.mkdirSync(StarknetDeployment.DEPLOYMENTS_DIR);
         }
 
