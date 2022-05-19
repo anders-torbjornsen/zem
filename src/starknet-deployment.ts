@@ -1,18 +1,16 @@
-import "@shardlabs/starknet-hardhat-plugin/dist/type-extensions"
-
-import { Abi } from "@shardlabs/starknet-hardhat-plugin/dist/starknet-types";
-import { DeployOptions } from "@shardlabs/starknet-hardhat-plugin/dist/types";
-import * as crypto from "crypto"
+import * as crypto from "crypto";
 import * as fs from "fs";
-import { HardhatRuntimeEnvironment, StarknetContract, StringMap } from "hardhat/types";
-
-import { ContractDeployConfigStandard } from "./deployment"
+import { HardhatRuntimeEnvironment } from "hardhat/types";
+import { ContractDeployConfigStandard } from "./deployment";
+import { Contract, Abi, RawCalldata } from "starknet";
+import "@playmint/hardhat-starknetjs";
+import { BigNumberish } from "starknet/dist/utils/number";
 
 export class StarknetDeployment {
     private static readonly DEPLOYMENTS_DIR: string = "./starknet-deployments";
     public readonly hre: HardhatRuntimeEnvironment;
     public readonly jsonFilePath: string;
-    public readonly instances: { [id: string]: StarknetContract };
+    public readonly instances: { [id: string]: Contract };
     // using a similar shape to the json of L1
     // deployments for consistency
     private _json: {
@@ -25,7 +23,7 @@ export class StarknetDeployment {
 
     constructor(hre: HardhatRuntimeEnvironment) {
         this.hre = hre;
-        this.jsonFilePath = `${StarknetDeployment.DEPLOYMENTS_DIR}/${hre.config.starknet.network}.json`;
+        this.jsonFilePath = `${StarknetDeployment.DEPLOYMENTS_DIR}/${hre.starknetjs.networkId}.json`;
         this.instances = {};
 
         if (fs.existsSync(this.jsonFilePath)) {
@@ -39,19 +37,15 @@ export class StarknetDeployment {
 
     public async deploy(
         contractConfig: ContractDeployConfigStandard,
-        constructorArguments?: StringMap,
-        options?: DeployOptions): Promise<StarknetContract> {
+        constructorCalldata?: RawCalldata,
+        addressSalt?: BigNumberish): Promise<Contract> {
         console.log(`deploying ${contractConfig.id} | ${contractConfig.contract} | autoUpdate=${contractConfig.autoUpdate}`);
 
         const contractFactory =
-            await this.hre.starknet.getContractFactory(contractConfig.contract);
+            await this.hre.starknetjs.getContractFactory(contractConfig.contract);
 
-        // HACK starknet-hardhat-plugin doesn't expose this
-        const contractMetadataPath = (contractFactory as any).metadataPath;
-        const contractMetadata =
-            JSON.parse(fs.readFileSync(contractMetadataPath).toString());
         const hash = crypto.createHash("sha256");
-        hash.update(contractMetadata.program.data.join());
+        hash.update(contractFactory.compiledContract.program.data.join());
         const bytecodeHash = hash.digest("hex");
 
         const contractJson = this._json.contracts[contractConfig.id];
@@ -65,14 +59,14 @@ export class StarknetDeployment {
 
             if (contractJson.bytecodeHash == bytecodeHash ||
                 !contractConfig.autoUpdate) {
-                this.instances[contractConfig.id] = contractFactory.getContractAt(contractJson.address);
+                this.instances[contractConfig.id] = contractFactory.attach(contractJson.address);
                 return this.instances[contractConfig.id];
             }
             console.log(`${contractConfig.id} is out of date (${contractJson.bytecodeHash}), redeploying (${bytecodeHash})`);
         }
 
         const instance =
-            await contractFactory.deploy(constructorArguments, options);
+            await contractFactory.deploy(constructorCalldata, addressSalt);
 
         console.log("deployed to", instance.address);
 
@@ -83,7 +77,7 @@ export class StarknetDeployment {
             address: instance.address,
             bytecodeHash: bytecodeHash
         };
-        this._json.abis[contractConfig.id] = contractMetadata.abi;
+        this._json.abis[contractConfig.id] = contractFactory.compiledContract.abi;
 
         return instance;
     }
