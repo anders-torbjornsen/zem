@@ -66,8 +66,7 @@ export class StarknetDeployment {
         }
 
         const instance =
-            await contractFactory.deploy(constructorCalldata, addressSalt);
-        await contractFactory.providerOrAccount.waitForTransaction(instance.deployTransactionHash!);
+            await (await contractFactory.deploy(constructorCalldata, addressSalt)).deployed();
 
         console.log("deployed to", instance.address);
 
