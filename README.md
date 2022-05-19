@@ -79,8 +79,7 @@ main()
 // This script can be run as many times as you like, it will only deploy what isn't already deployed
 
 import * as hre from "hardhat"
-import { StarknetDeployment } from "@anders-t/zem" // if you don't want to install hardhat-ethers then you can change this to "@anders-t/zem/lib/starknet-deployment"
-import { StarknetContract } from "hardhat/types";
+import { StarknetDeployment } from "@anders-t/zem"
 
 let deployment: Deployment;
 
@@ -90,17 +89,20 @@ async function main()
 
     deployment = new StarknetDeployment(hre);
 
-    const contract: StarknetContract = await deployment.deploy({
+    const contract = await deployment.deploy({
         id: "contract",
-        contract: "contracts/Contract.cairo",
+        contract: "Contract.cairo",
         autoUpdate: true
-    }, {"constructorArg1": 1, "constructorArg2": 42});
+    }, 
+    "constructor",  // the name of the constructor function in the StarkNet contract
+                    // (omit this if there is no constructor)
+    [1, 42]);       // array of constructor args
 
-    console.log(await contract.call("get_number"));
-    await contract.invoke("set_number", {"number": 21});
+    console.log(await contract.get_number());
+    await contract.set_number(21);
 
     // you can also get contract instances from the deployment
-    console.log(await deployment.instances.contract.call("get_number"));
+    console.log(await deployment.instances.contract.get_number());
 }
 
 main()
