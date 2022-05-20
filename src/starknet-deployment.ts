@@ -45,7 +45,7 @@ export class StarknetDeployment {
             await this.hre.starknetjs.getContractFactory(contractConfig.contract);
 
         const hash = crypto.createHash("sha256");
-        hash.update(contractFactory.compiledContract.program.data.join());
+        hash.update(JSON.stringify(contractFactory.compiledContract.program));
         const bytecodeHash = hash.digest("hex");
 
         const contractJson = this._json.contracts[contractConfig.id];
