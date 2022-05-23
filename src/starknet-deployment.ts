@@ -28,7 +28,7 @@ export class StarknetDeployment {
 
         if (fs.existsSync(this.jsonFilePath)) {
             this._json =
-                JSON.parse(fs.readFileSync(this.jsonFilePath).toString());
+                json.parse(fs.readFileSync(this.jsonFilePath).toString());
         }
         else {
             this._json = { contracts: {}, abis: {} };
@@ -98,6 +98,6 @@ export class StarknetDeployment {
         }
 
         fs.writeFileSync(
-            this.jsonFilePath, JSON.stringify(this._json, null, 4));
+            this.jsonFilePath, json.stringify(this._json, null, 4));
     }
 }
