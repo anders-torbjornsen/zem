@@ -1,8 +1,8 @@
-import * as crypto from "crypto";
-import * as fs from "fs";
+import crypto from "crypto";
+import fs from "fs";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { ContractDeployConfigStandard } from "./deployment";
-import { Contract, Abi } from "starknet";
+import { Contract, Abi, json } from "starknet";
 import "@playmint/hardhat-starknetjs";
 import { BigNumberish } from "starknet/dist/utils/number";
 
@@ -45,7 +45,7 @@ export class StarknetDeployment {
             await this.hre.starknetjs.getContractFactory(contractConfig.contract);
 
         const hash = crypto.createHash("sha256");
-        hash.update(JSON.stringify(contractFactory.compiledContract.program));
+        hash.update(json.stringify(contractFactory.compiledContract.program));
         const bytecodeHash = hash.digest("hex");
 
         const contractJson = this._json.contracts[contractConfig.id];
