@@ -1,6 +1,10 @@
+<img src="https://raw.githubusercontent.com/anders-torbjornsen/zem/main/zem.png" width=300 height=300/>
+
+[![NPM Package](https://img.shields.io/npm/v/@anders-t/zem.svg?style=flat-square)](https://www.npmjs.com/package/@anders-t/zem)
+---
 # Zem
 
-An Ethereum/Starknet smart contracts deployment system for [Hardhat](https://github.com/nomiclabs/hardhat) written in Typescript.
+An Ethereum/Starknet smart contract deployment system for [Hardhat](https://github.com/nomiclabs/hardhat) written in Typescript.
 
 Create a deployment script for your project, create a Zem Deployment object and use it to deploy your contracts, and at the end of the script call `writeToFile()` on your Deployment object (see below for examples). The first time you run your deployment script, your contracts will be deployed, but on subsequent runs Zem will load the saved file and use the existing instances of your contracts which were deployed before. The standard input json is also stored to the deployment file, which means you automatically have information you might need for debugging, verifying, etc. Zem will detect if a deployed contract is outdated, and can optionally automatically redeploy your contracts, including handling ERC1967 proxy contracts.
 
@@ -73,13 +77,35 @@ main()
 ```
 
 ## Starknet Example
+```ts
+// hardhat.config.ts
+
+import "@playmint/hardhat-starknetjs";
+import "@playmint/hardhat-starknet-compile";
+import { HardhatUserConfig } from "hardhat/types/config";
+
+
+const config: HardhatUserConfig =
+{
+    solidity: "0.8.9",
+    starknetjs: {
+        networks: {
+            devnet: {
+                baseUrl: "http://localhost:5000"
+            }
+        }
+    }
+};
+
+export default config;
+```
 
 ```ts
 // deploy.ts
 // This script can be run as many times as you like, it will only deploy what isn't already deployed
 
-import * as hre from "hardhat"
-import { StarknetDeployment } from "@anders-t/zem"
+import hre from "hardhat";
+import { StarknetDeployment } from "@anders-t/zem";
 
 let deployment: Deployment;
 
