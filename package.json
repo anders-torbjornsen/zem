@@ -1,6 +1,6 @@
 {
   "name": "@anders-t/zem",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "A simple EVM & Starknet smart contract deployment system for Hardhat",
   "author": "Anders-T | 0x80.eth <anders.torbjornsen87@gmail.com>",
   "keywords": [
@@ -33,8 +33,8 @@
   ],
   "dependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.4",
-    "@playmint/hardhat-starknet-compile": "^1.0.1",
-    "@playmint/hardhat-starknetjs": "^1.0.1",
+    "@playmint/hardhat-starknet-compile": "^1.0.2",
+    "@playmint/hardhat-starknetjs": "^1.0.3",
     "starknet": "^3.9.0"
   },
   "devDependencies": {
