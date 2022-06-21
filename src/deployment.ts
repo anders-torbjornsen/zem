@@ -49,6 +49,9 @@ export class Deployment {
     public get hre() {
         return this._hre;
     }
+    public get signer() {
+        return this._signer;
+    }
     public get instances() {
         return this._instances;
     }

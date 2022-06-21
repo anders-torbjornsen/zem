@@ -22,6 +22,7 @@ export declare class Deployment {
     private _proxyInstances;
     private _proxyImplInstances;
     get hre(): HardhatRuntimeEnvironment;
+    get signer(): Signer | undefined;
     get instances(): {
         [id: string]: Contract;
     };
