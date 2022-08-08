@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import {DiamondBase, DiamondBaseStorage} from "@solidstate/contracts/proxy/diamond/base/DiamondBase.sol";
-import {IDiamondWritable} from "@solidstate/contracts/proxy/diamond/writable/IDiamondWritable.sol";
+import { DiamondBase, DiamondBaseStorage } from "@solidstate/contracts/proxy/diamond/base/DiamondBase.sol";
+import { IDiamondWritable } from "@solidstate/contracts/proxy/diamond/writable/IDiamondWritable.sol";
 
 struct FacetInitialiser {
     IDiamondWritable.FacetCut[] facetCuts;

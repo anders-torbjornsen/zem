@@ -5,10 +5,10 @@ pragma solidity ^0.8.0;
 // ERC173 - Ownership
 // ERC165 - Interface Detection
 
-import {ERC721Metadata, ERC721MetadataStorage} from "@solidstate/contracts/token/ERC721/metadata/ERC721Metadata.sol";
-import {IERC721, ERC721Base, ERC721BaseInternal} from "@solidstate/contracts/token/ERC721/base/ERC721Base.sol";
-import {ERC165, IERC165, ERC165Storage} from "@solidstate/contracts/introspection/ERC165.sol";
-import {Ownable, OwnableStorage, IERC173} from "@solidstate/contracts/access/ownable/Ownable.sol";
+import { ERC721Metadata, ERC721MetadataStorage } from "@solidstate/contracts/token/ERC721/metadata/ERC721Metadata.sol";
+import { IERC721, ERC721Base, ERC721BaseInternal } from "@solidstate/contracts/token/ERC721/base/ERC721Base.sol";
+import { ERC165, IERC165, ERC165Storage } from "@solidstate/contracts/introspection/ERC165.sol";
+import { Ownable, OwnableStorage, IERC173 } from "@solidstate/contracts/access/ownable/Ownable.sol";
 
 contract NFTFacet is ERC721Base, ERC721Metadata, ERC165, Ownable {
     using ERC165Storage for ERC165Storage.Layout;
