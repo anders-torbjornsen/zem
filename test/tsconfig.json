@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "outDir": "lib",
+        "declaration": true,
+        "declarationMap": true,
+        "esModuleInterop": true,
+        "module": "CommonJS",
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitAny": true,
+        "noUnusedLocals": true,
+        "sourceMap": true,
+        "strict": true
+    }
+}
