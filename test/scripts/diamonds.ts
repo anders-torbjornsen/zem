@@ -1,4 +1,4 @@
-import { Deployment } from "@anders-t/zem";
+import { Deployment } from "../../src";
 import hre from "hardhat";
 import { DiamondFacet__factory, NFTFacet__factory } from "../typechain-types";
 
@@ -9,7 +9,7 @@ async function main() {
 
     deployment = new Deployment(hre);
 
-    const diamondProxy = await deployment.deployDiamond({
+    /*const diamondProxy = await deployment.deployDiamond({
         id: "diamond",
         proxy: "Diamond.sol:Diamond",
         facets: [
@@ -20,6 +20,12 @@ async function main() {
                 contract: "NFTFacet.sol:NFTFacet"
             }
         ]
+    });*/
+
+    const diamondProxy = await deployment.deployDiamond({
+        id: "diamond",
+        contract: "Diamond.sol:Diamond",
+        autoUpdate: false
     });
 
     /*

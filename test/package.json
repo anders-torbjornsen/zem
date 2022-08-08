@@ -1,6 +1,5 @@
 {
   "devDependencies": {
-    "@anders-t/zem": "file:..",
     "@nomiclabs/hardhat-ethers": "^2.1.0",
     "@solidstate/contracts": "^0.0.40",
     "@typechain/hardhat": "^6.1.2",

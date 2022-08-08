@@ -8,10 +8,13 @@ interface ContractDeployConfig {
 export interface ContractDeployConfigStandard extends ContractDeployConfig {
     id: string;
 }
-interface ContractDeployConfigERC1967 {
+export interface ContractDeployConfigERC1967 {
     id: string;
     proxy: ContractDeployConfig;
     implementation: ContractDeployConfig;
+}
+export interface ContractDeployConfigDiamond {
+    id: string;
 }
 export declare class Deployment {
     private _hre;
@@ -35,6 +38,7 @@ export declare class Deployment {
     constructor(hre: HardhatRuntimeEnvironment, signer?: Signer);
     deploy(contractConfig: ContractDeployConfigStandard, ...args: any[]): Promise<Contract>;
     deployERC1967(contractConfig: ContractDeployConfigERC1967, getProxyConstructorArgs: (implementation: Contract) => any[], upgradeFunc: (proxy: Contract, newImplementation: Contract) => Promise<void>): Promise<Contract>;
+    deployDiamond(contractConfig: ContractDeployConfigStandard): Promise<Contract>;
     private _deploy;
     private _getERC1967ImplementationAddress;
     writeToFile(): void;

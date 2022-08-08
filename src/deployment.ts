@@ -31,10 +31,14 @@ export interface ContractDeployConfigStandard extends ContractDeployConfig {
     // instance
 }
 
-interface ContractDeployConfigERC1967 {
+export interface ContractDeployConfigERC1967 {
     id: string;
     proxy: ContractDeployConfig;
     implementation: ContractDeployConfig;
+}
+
+export interface ContractDeployConfigDiamond {
+    id: string;
 }
 
 export class Deployment {
@@ -161,6 +165,10 @@ export class Deployment {
         this._proxyImplInstances[contractConfig.id] = implementation;
 
         return instance;
+    }
+
+    async deployDiamond(contractConfig: ContractDeployConfigStandard) {
+        return await this._deploy(contractConfig, { contract: "", address: "", bytecodeHash: "", buildInfoId: "" });
     }
 
     private async _deploy(

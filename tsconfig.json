@@ -12,5 +12,8 @@
         "noUnusedLocals": true,
         "sourceMap": true,
         "strict": true
-    }
+    },
+    "include": [
+        "src"
+    ]
 }
