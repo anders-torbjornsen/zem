@@ -2,6 +2,7 @@ import "@nomiclabs/hardhat-ethers"
 
 import * as crypto from "crypto"
 import { Contract, ContractFactory, Signer } from "ethers";
+import ethers from "ethers";
 import * as fs from "fs";
 import { Artifact, BuildInfo, HardhatRuntimeEnvironment } from "hardhat/types";
 
@@ -37,8 +38,8 @@ export interface ContractDeployConfigERC1967 {
     implementation: ContractDeployConfig;
 }
 
-export interface ContractDeployConfigDiamond {
-    id: string;
+export interface ContractDeployConfigDiamond extends ContractDeployConfigStandard {
+    facets: { contract: string }[];
 }
 
 export class Deployment {
@@ -167,8 +168,85 @@ export class Deployment {
         return instance;
     }
 
-    async deployDiamond(contractConfig: ContractDeployConfigStandard) {
-        return await this._deploy(contractConfig, { contract: "", address: "", bytecodeHash: "", buildInfoId: "" });
+    async deployDiamond(contractConfig: ContractDeployConfigDiamond, ...args: any[]) {
+        const proxy = await this._deploy(contractConfig, { contract: "", address: "", bytecodeHash: "", buildInfoId: "" }, ...args);
+
+        if (!diamondAbi) {
+            diamondAbi = new this._hre.ethers.utils.Interface(`[
+                {
+                  "inputs": [
+                    {
+                      "components": [
+                        {
+                          "internalType": "address",
+                          "name": "target",
+                          "type": "address"
+                        },
+                        {
+                          "internalType": "enum IDiamondWritable.FacetCutAction",
+                          "name": "action",
+                          "type": "uint8"
+                        },
+                        {
+                          "internalType": "bytes4[]",
+                          "name": "selectors",
+                          "type": "bytes4[]"
+                        }
+                      ],
+                      "internalType": "struct IDiamondWritable.FacetCut[]",
+                      "name": "facetCuts",
+                      "type": "tuple[]"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "target",
+                      "type": "address"
+                    },
+                    {
+                      "internalType": "bytes",
+                      "name": "data",
+                      "type": "bytes"
+                    }
+                  ],
+                  "name": "diamondCut",
+                  "outputs": [],
+                  "stateMutability": "nonpayable",
+                  "type": "function"
+                },
+                {
+                  "inputs": [],
+                  "name": "facets",
+                  "outputs": [
+                    {
+                      "components": [
+                        {
+                          "internalType": "address",
+                          "name": "target",
+                          "type": "address"
+                        },
+                        {
+                          "internalType": "bytes4[]",
+                          "name": "selectors",
+                          "type": "bytes4[]"
+                        }
+                      ],
+                      "internalType": "struct IDiamondReadable.Facet[]",
+                      "name": "diamondFacets",
+                      "type": "tuple[]"
+                    }
+                  ],
+                  "stateMutability": "view",
+                  "type": "function"
+                }
+              ]`);
+        }
+
+        const diamond = new Contract(proxy.address, diamondAbi);
+
+        const facets = await diamond.facets();
+        console.log(facets);
+
+        return proxy;
     }
 
     private async _deploy(
@@ -293,3 +371,5 @@ export class Deployment {
             JSON.stringify(this._deployedContracts, null, 4));
     }
 }
+
+let diamondAbi: ethers.utils.Interface;

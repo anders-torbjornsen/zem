@@ -9,24 +9,19 @@ async function main() {
 
     deployment = new Deployment(hre);
 
-    /*const diamondProxy = await deployment.deployDiamond({
-        id: "diamond",
-        proxy: "Diamond.sol:Diamond",
-        facets: [
-            {
-                contract: "DiamondFacet.sol:DiamondFacet"
-            },
-            {
-                contract: "NFTFacet.sol:NFTFacet"
-            }
-        ]
-    });*/
-
     const diamondProxy = await deployment.deployDiamond({
         id: "diamond",
-        contract: "Diamond.sol:Diamond",
-        autoUpdate: false
-    });
+        contract: "contracts/Diamond.sol:Diamond",
+        autoUpdate: false,
+        facets: [
+            {
+                contract: "contracts/DiamondFacet.sol:DiamondFacet"
+            },
+            {
+                contract: "contracts/NFTFacet.sol:NFTFacet"
+            }
+        ]
+    }, []);
 
     /*
         const init: FacetInitialiserStruct[] = [];
