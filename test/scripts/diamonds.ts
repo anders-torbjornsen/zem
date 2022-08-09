@@ -46,7 +46,7 @@ async function main() {
 }
 
 main().catch(e => console.error(e)).finally(() => {
-    if (deployment !== undefined) {
+    if (deployment !== undefined && deployment.hre.network.name != "hardhat") {
         console.log("saving to file");
         deployment.writeToFile();
     }

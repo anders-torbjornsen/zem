@@ -1,8 +1,11 @@
 import "@nomiclabs/hardhat-ethers"
 
 import * as crypto from "crypto"
-import { Contract, ContractFactory, Signer } from "ethers";
-import ethers from "ethers";
+import { Contract, ContractFactory, Signer, BytesLike } from "ethers";
+import { Interface } from "@ethersproject/abi";
+import { keccak256 } from "@ethersproject/keccak256";
+import { toUtf8Bytes } from "@ethersproject/strings";
+import { hexlify } from "@ethersproject/bytes";
 import * as fs from "fs";
 import { Artifact, BuildInfo, HardhatRuntimeEnvironment } from "hardhat/types";
 
@@ -38,8 +41,14 @@ export interface ContractDeployConfigERC1967 {
     implementation: ContractDeployConfig;
 }
 
+export interface FacetConfig {
+    contract: string;
+    functionsToIgnore?: string[];
+    selectorsToIgnore?: BytesLike[];
+}
+
 export interface ContractDeployConfigDiamond extends ContractDeployConfigStandard {
-    facets: { contract: string }[];
+    facets: FacetConfig[];
 }
 
 export class Deployment {
@@ -171,80 +180,150 @@ export class Deployment {
     async deployDiamond(contractConfig: ContractDeployConfigDiamond, ...args: any[]) {
         const proxy = await this._deploy(contractConfig, { contract: "", address: "", bytecodeHash: "", buildInfoId: "" }, ...args);
 
-        if (!diamondAbi) {
-            diamondAbi = new this._hre.ethers.utils.Interface(`[
-                {
-                  "inputs": [
-                    {
-                      "components": [
-                        {
-                          "internalType": "address",
-                          "name": "target",
-                          "type": "address"
-                        },
-                        {
-                          "internalType": "enum IDiamondWritable.FacetCutAction",
-                          "name": "action",
-                          "type": "uint8"
-                        },
-                        {
-                          "internalType": "bytes4[]",
-                          "name": "selectors",
-                          "type": "bytes4[]"
-                        }
-                      ],
-                      "internalType": "struct IDiamondWritable.FacetCut[]",
-                      "name": "facetCuts",
-                      "type": "tuple[]"
-                    },
-                    {
-                      "internalType": "address",
-                      "name": "target",
-                      "type": "address"
-                    },
-                    {
-                      "internalType": "bytes",
-                      "name": "data",
-                      "type": "bytes"
+        enum FacetCutAction {
+            Add,
+            Update,
+            Remove
+        }
+
+        type FacetCut = {
+            facetAddress: string;
+            action: FacetCutAction;
+            functionSelectors: BytesLike[];
+        }
+
+        const facetCuts: FacetCut[] = [];
+        facetCuts.length;
+
+        type Facet = {
+            contract: string;
+            selectors: BytesLike[];
+        }
+        const facets: Facet[] = [];
+
+        const allSelectors = new Set<BytesLike>();
+
+        for (const facetConfig of contractConfig.facets) {
+            const facet: Facet = {
+                contract: facetConfig.contract,
+                selectors: []
+            };
+
+            const artifact = await this._hre.artifacts.readArtifact(facetConfig.contract);
+            const facetInterface = new Interface(artifact.abi);
+
+            const selectorsToIgnore = new Set<string>();
+            if (facetConfig.functionsToIgnore) {
+                for (const func of facetConfig.functionsToIgnore) {
+                    const funcSig = getFunctionSig(func, facetInterface);
+                    const hash = keccak256(toUtf8Bytes(funcSig));
+                    const selector = hash.substring(0, 10);
+                    selectorsToIgnore.add(selector);
+                }
+            }
+            if (facetConfig.selectorsToIgnore) {
+                for (const selector of facetConfig.selectorsToIgnore) {
+                    if (typeof (selector) === "string") {
+                        selectorsToIgnore.add(selector);
                     }
-                  ],
-                  "name": "diamondCut",
-                  "outputs": [],
-                  "stateMutability": "nonpayable",
-                  "type": "function"
+                    else {
+                        selectorsToIgnore.add(hexlify(selector));
+                    }
+                }
+            }
+
+            for (const funcSig in facetInterface.functions) {
+                const hash = keccak256(toUtf8Bytes(funcSig));
+                const selector = hash.substring(0, 10);
+
+                if (selectorsToIgnore.has(selector)) {
+                    continue;
+                }
+
+                facet.selectors.push(selector);
+
+                if (allSelectors.has(selector)) {
+                    throw new Error(`function '${funcSig}' defined in multiple facets`);
+                }
+                allSelectors.add(selector);
+            }
+
+            facets.push(facet);
+        }
+
+        const diamondAbi = new Interface(`[
+        {
+            "inputs": [
+            {
+                "components": [
+                {
+                    "internalType": "address",
+                    "name": "target",
+                    "type": "address"
                 },
                 {
-                  "inputs": [],
-                  "name": "facets",
-                  "outputs": [
-                    {
-                      "components": [
-                        {
-                          "internalType": "address",
-                          "name": "target",
-                          "type": "address"
-                        },
-                        {
-                          "internalType": "bytes4[]",
-                          "name": "selectors",
-                          "type": "bytes4[]"
-                        }
-                      ],
-                      "internalType": "struct IDiamondReadable.Facet[]",
-                      "name": "diamondFacets",
-                      "type": "tuple[]"
-                    }
-                  ],
-                  "stateMutability": "view",
-                  "type": "function"
+                    "internalType": "enum IDiamondWritable.FacetCutAction",
+                    "name": "action",
+                    "type": "uint8"
+                },
+                {
+                    "internalType": "bytes4[]",
+                    "name": "selectors",
+                    "type": "bytes4[]"
                 }
-              ]`);
+                ],
+                "internalType": "struct IDiamondWritable.FacetCut[]",
+                "name": "facetCuts",
+                "type": "tuple[]"
+            },
+            {
+                "internalType": "address",
+                "name": "target",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes",
+                "name": "data",
+                "type": "bytes"
+            }
+            ],
+            "name": "diamondCut",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [],
+            "name": "facets",
+            "outputs": [
+            {
+                "components": [
+                {
+                    "internalType": "address",
+                    "name": "target",
+                    "type": "address"
+                },
+                {
+                    "internalType": "bytes4[]",
+                    "name": "selectors",
+                    "type": "bytes4[]"
+                }
+                ],
+                "internalType": "struct IDiamondReadable.Facet[]",
+                "name": "diamondFacets",
+                "type": "tuple[]"
+            }
+            ],
+            "stateMutability": "view",
+            "type": "function"
         }
+        ]`);
+
+
 
         const diamond = new Contract(proxy.address, diamondAbi);
 
-        const facets = await diamond.facets();
-        console.log(facets);
+        console.log(await diamond.facets());
 
         return proxy;
     }
@@ -371,5 +450,3 @@ export class Deployment {
             JSON.stringify(this._deployedContracts, null, 4));
     }
 }
-
-let diamondAbi: ethers.utils.Interface;
