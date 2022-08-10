@@ -188,32 +188,32 @@ export class Deployment {
                 "components": [
                 {
                     "internalType": "address",
-                    "name": "target",
+                    "name": "facetAddress",
                     "type": "address"
                 },
                 {
-                    "internalType": "enum IDiamondWritable.FacetCutAction",
+                    "internalType": "enum IDiamondCut.FacetCutAction",
                     "name": "action",
                     "type": "uint8"
                 },
                 {
                     "internalType": "bytes4[]",
-                    "name": "selectors",
+                    "name": "functionSelectors",
                     "type": "bytes4[]"
                 }
                 ],
-                "internalType": "struct IDiamondWritable.FacetCut[]",
+                "internalType": "struct IDiamondCut.FacetCut[]",
                 "name": "facetCuts",
                 "type": "tuple[]"
             },
             {
                 "internalType": "address",
-                "name": "target",
+                "name": "_init",
                 "type": "address"
             },
             {
                 "internalType": "bytes",
-                "name": "data",
+                "name": "_calldata",
                 "type": "bytes"
             }
             ],
@@ -230,17 +230,17 @@ export class Deployment {
                 "components": [
                 {
                     "internalType": "address",
-                    "name": "target",
+                    "name": "facetAddress",
                     "type": "address"
                 },
                 {
                     "internalType": "bytes4[]",
-                    "name": "selectors",
+                    "name": "functionSelectors",
                     "type": "bytes4[]"
                 }
                 ],
-                "internalType": "struct IDiamondReadable.Facet[]",
-                "name": "diamondFacets",
+                "internalType": "struct IDiamondLoupe.Facet[]",
+                "name": "facets_",
                 "type": "tuple[]"
             }
             ],
