@@ -179,7 +179,13 @@ export class Deployment {
     }
 
     async deployDiamond(contractConfig: ContractDeployConfigDiamond) {
-        const proxy = await this._deploy(contractConfig, { contract: "", address: "", bytecodeHash: "", buildInfoId: "" });
+        const facets: { [contract: string]: Contract } = {};
+        for (const facetConfig of contractConfig.facets) {
+            facets[facetConfig.contract] = await this._deploy({ id: facetConfig.contract, contract: facetConfig.contract, autoUpdate: false }, { contract: "", address: "", bytecodeHash: "", buildInfoId: "" });
+        }
+
+        const proxyConstructorArgs = contractConfig.getProxyConstructorArgs(facets);
+        const proxy = await this._deploy(contractConfig, { contract: "", address: "", bytecodeHash: "", buildInfoId: "" }, ...proxyConstructorArgs);
 
         const diamondAbi = new Interface(`[
         {
