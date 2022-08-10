@@ -49,6 +49,7 @@ export interface FacetConfig {
 
 export interface ContractDeployConfigDiamond extends ContractDeployConfigStandard {
     facets: FacetConfig[];
+    getProxyConstructorArgs: (facetAddresses: { [contract: string]: Contract }) => any[];
 }
 
 export class Deployment {
@@ -177,79 +178,8 @@ export class Deployment {
         return instance;
     }
 
-    async deployDiamond(contractConfig: ContractDeployConfigDiamond, ...args: any[]) {
-        const proxy = await this._deploy(contractConfig, { contract: "", address: "", bytecodeHash: "", buildInfoId: "" }, ...args);
-
-        enum FacetCutAction {
-            Add,
-            Update,
-            Remove
-        }
-
-        type FacetCut = {
-            facetAddress: string;
-            action: FacetCutAction;
-            functionSelectors: BytesLike[];
-        }
-
-        const facetCuts: FacetCut[] = [];
-        facetCuts.length;
-
-        type Facet = {
-            contract: string;
-            selectors: BytesLike[];
-        }
-        const facets: Facet[] = [];
-
-        const allSelectors = new Set<BytesLike>();
-
-        for (const facetConfig of contractConfig.facets) {
-            const facet: Facet = {
-                contract: facetConfig.contract,
-                selectors: []
-            };
-
-            const artifact = await this._hre.artifacts.readArtifact(facetConfig.contract);
-            const facetInterface = new Interface(artifact.abi);
-
-            const selectorsToIgnore = new Set<string>();
-            if (facetConfig.functionsToIgnore) {
-                for (const func of facetConfig.functionsToIgnore) {
-                    const funcSig = getFunctionSig(func, facetInterface);
-                    const hash = keccak256(toUtf8Bytes(funcSig));
-                    const selector = hash.substring(0, 10);
-                    selectorsToIgnore.add(selector);
-                }
-            }
-            if (facetConfig.selectorsToIgnore) {
-                for (const selector of facetConfig.selectorsToIgnore) {
-                    if (typeof (selector) === "string") {
-                        selectorsToIgnore.add(selector);
-                    }
-                    else {
-                        selectorsToIgnore.add(hexlify(selector));
-                    }
-                }
-            }
-
-            for (const funcSig in facetInterface.functions) {
-                const hash = keccak256(toUtf8Bytes(funcSig));
-                const selector = hash.substring(0, 10);
-
-                if (selectorsToIgnore.has(selector)) {
-                    continue;
-                }
-
-                facet.selectors.push(selector);
-
-                if (allSelectors.has(selector)) {
-                    throw new Error(`function '${funcSig}' defined in multiple facets`);
-                }
-                allSelectors.add(selector);
-            }
-
-            facets.push(facet);
-        }
+    async deployDiamond(contractConfig: ContractDeployConfigDiamond) {
+        const proxy = await this._deploy(contractConfig, { contract: "", address: "", bytecodeHash: "", buildInfoId: "" });
 
         const diamondAbi = new Interface(`[
         {
@@ -318,8 +248,6 @@ export class Deployment {
             "type": "function"
         }
         ]`);
-
-
 
         const diamond = new Contract(proxy.address, diamondAbi);
 
@@ -449,4 +377,104 @@ export class Deployment {
             this._jsonFilePath,
             JSON.stringify(this._deployedContracts, null, 4));
     }
+}
+
+function getFunctionSig(func: string, contractInterface: Interface) {
+    if (func.indexOf("(") != -1) {
+        return func;
+    }
+
+    const candidates = Object.keys(contractInterface.functions).filter((sig) => {
+        return sig.substring(0, sig.indexOf("(")) == func;
+    });
+
+    if (candidates.length == 1) {
+        return candidates[0];
+    }
+
+    if (candidates.length == 0) {
+        throw new Error(`no function with name '${func}' found in contract interface`);
+    }
+    else {
+        throw new Error(`multiple functions with name '${func}' found in contract interface:\n` + candidates.join("\n"));
+    }
+}
+
+export type Facet = {
+    contract: string;
+    selectors: BytesLike[];
+}
+
+export function getFacets(facets: FacetConfig[], hre: HardhatRuntimeEnvironment) {
+    const results: Facet[] = [];
+
+    const allSelectors = new Set<BytesLike>();
+
+    for (const facetConfig of facets) {
+        const facet: Facet = {
+            contract: facetConfig.contract,
+            selectors: []
+        };
+
+        const artifact = hre.artifacts.readArtifactSync(facetConfig.contract);
+        const facetInterface = new Interface(artifact.abi);
+
+        const selectorsToIgnore = new Set<string>();
+        if (facetConfig.functionsToIgnore) {
+            for (const func of facetConfig.functionsToIgnore) {
+                const funcSig = getFunctionSig(func, facetInterface);
+                const hash = keccak256(toUtf8Bytes(funcSig));
+                const selector = hash.substring(0, 10);
+                selectorsToIgnore.add(selector);
+            }
+        }
+        if (facetConfig.selectorsToIgnore) {
+            for (const selector of facetConfig.selectorsToIgnore) {
+                if (typeof (selector) === "string") {
+                    selectorsToIgnore.add(selector);
+                }
+                else {
+                    selectorsToIgnore.add(hexlify(selector));
+                }
+            }
+        }
+
+        for (const funcSig in facetInterface.functions) {
+            const hash = keccak256(toUtf8Bytes(funcSig));
+            const selector = hash.substring(0, 10);
+
+            if (selectorsToIgnore.has(selector)) {
+                continue;
+            }
+
+            facet.selectors.push(selector);
+
+            if (allSelectors.has(selector)) {
+                throw new Error(`function '${funcSig}' defined in multiple facets`);
+            }
+            allSelectors.add(selector);
+        }
+
+        results.push(facet);
+    }
+
+    return results;
+}
+
+export enum FacetCutAction {
+    Add,
+    Update,
+    Remove
+}
+
+export type FacetCut = {
+    facetAddress: string;
+    action: FacetCutAction;
+    functionSelectors: BytesLike[];
+}
+
+export function calculateFacetCuts(facetConfig: FacetConfig[], currentFacets: Facet[]) {
+    const facetCuts: FacetCut[] = [];
+
+    return facetCuts;
 }

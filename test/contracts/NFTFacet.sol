@@ -14,8 +14,6 @@ contract NFTFacet is ERC721Base, ERC721Metadata, ERC165, Ownable {
     using ERC165Storage for ERC165Storage.Layout;
     using OwnableStorage for OwnableStorage.Layout;
 
-    function init() external {}
-
     function init(
         string calldata name,
         string calldata symbol,
