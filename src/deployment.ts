@@ -20,8 +20,15 @@ interface DeployedERC1967 extends DeployedContract {
     implementation: DeployedContract
 }
 
+// TODO include these in the pruning code
+interface DeployedFacet {
+    address: string;
+    buildInfoId: string;
+}
+
 interface DeployedContracts {
     contracts: { [id: string]: DeployedContract | DeployedERC1967 };
+    facets: { [contract: string]: { [bytecodeHash: string]: DeployedFacet } };
     artifacts: { [buildInfoId: string]: BuildInfo };
 }
 
@@ -91,7 +98,7 @@ export class Deployment {
                 JSON.parse(fs.readFileSync(this._jsonFilePath).toString());
         }
         else {
-            this._deployedContracts = { contracts: {}, artifacts: {} };
+            this._deployedContracts = { contracts: {}, artifacts: {}, facets: {} };
         }
     }
 
@@ -182,6 +189,17 @@ export class Deployment {
         const facets: { [contract: string]: Contract } = {};
         for (const facetConfig of contractConfig.facets) {
             facets[facetConfig.contract] = await this._deploy({ id: facetConfig.contract, contract: facetConfig.contract, autoUpdate: false }, { contract: "", address: "", bytecodeHash: "", buildInfoId: "" });
+
+            if (!this._deployedContracts.facets[facetConfig.contract]) {
+                this._deployedContracts.facets[facetConfig.contract] = {};
+            }
+            const deployedFacetVersions = this._deployedContracts.facets[facetConfig.contract];
+
+            const facetArtifact = this._hre.artifacts.readArtifactSync(facetConfig.contract);
+            deployedFacetVersions[getBytecodeHash(facetArtifact)] = {
+                address: facets[facetConfig.contract].address,
+                buildInfoId: (await this._hre.artifacts.getBuildInfo(facetConfig.contract))!.id
+            };
         }
 
         const proxyConstructorArgs = contractConfig.getProxyConstructorArgs(facets);
@@ -255,9 +273,12 @@ export class Deployment {
         }
         ]`);
 
-        const diamond = new Contract(proxy.address, diamondAbi);
+        const signer = this._signer || (await this._hre.ethers.getSigners())[0];
+        const diamond = new Contract(proxy.address, diamondAbi, signer);
 
         console.log(await diamond.facets());
+
+        // TODO calculate and apply any needed cuts here
 
         return proxy;
     }
@@ -276,9 +297,7 @@ export class Deployment {
             throw "buildInfo not found for " + contractConfig.contract;
         }
 
-        const hash = crypto.createHash("sha256");
-        hash.update(artifact.bytecode);
-        const bytecodeHash = hash.digest("hex");
+        const bytecodeHash = getBytecodeHash(artifact);
 
         if (deployedContract.address != "") {
             console.log(`${contractConfig.id} is already deployed at ${deployedContract.address}`);
@@ -383,6 +402,65 @@ export class Deployment {
             this._jsonFilePath,
             JSON.stringify(this._deployedContracts, null, 4));
     }
+
+    calculateFacetCuts(facets: FacetConfig[], currentFacets: IDiamondLoupeFacetStruct[]): FacetCut[] {
+        const currentFacetAddresses = new Set<string>();
+        for (const facet of currentFacets) {
+            currentFacetAddresses.add(facet.facetAddress);
+        }
+
+        const neededFacets = getFacets(facets, this._hre).map((facet) => {
+            const deployedFacetVersions = this._deployedContracts.facets[facet.contract];
+            if (!deployedFacetVersions) {
+                throw new Error(`no instances of facet '${facet.contract}' are present in deployment`);
+            }
+
+            // TODO concept of autoupdate, deploy new versions of facets and update selectors if true
+            let currentFacetAddress = "";
+            for (const deployedFacetVersion in deployedFacetVersions) {
+                const deployedFacetAddress = deployedFacetVersions[deployedFacetVersion].address;
+                if (currentFacetAddresses.has(deployedFacetAddress)) {
+                    currentFacetAddress = deployedFacetAddress
+                    break;
+                }
+            }
+
+            if (currentFacetAddress == "") {
+                const facetArtifact = this._hre.artifacts.readArtifactSync(facet.contract);
+                const bytecodeHash = getBytecodeHash(facetArtifact);
+                const deployedFacet = deployedFacetVersions[bytecodeHash];
+                if (!deployedFacet) {
+                    throw new Error(`latest version of '${facet.contract}' contract not found in the deployed facets of deployment`)
+                }
+                currentFacetAddress = deployedFacet.address;
+            }
+
+            return {
+                facetAddress: currentFacetAddress,
+                functionSelectors: facet.selectors
+            };
+        });
+
+        // TODO calculate deltas
+        return neededFacets.map((facet) => {
+            return {
+                facetAddress: facet.facetAddress,
+                action: FacetCutAction.Add,
+                functionSelectors: facet.functionSelectors
+            };
+        })
+    }
+}
+
+export type IDiamondLoupeFacetStruct = {
+    facetAddress: string;
+    functionSelectors: BytesLike[];
+}
+
+function getBytecodeHash(artifact: Artifact) {
+    const hash = crypto.createHash("sha256");
+    hash.update(artifact.deployedBytecode);
+    return hash.digest("hex");
 }
 
 function getFunctionSig(func: string, contractInterface: Interface) {
@@ -477,10 +555,4 @@ export type FacetCut = {
     facetAddress: string;
     action: FacetCutAction;
     functionSelectors: BytesLike[];
-}
-
-export function calculateFacetCuts(facetConfig: FacetConfig[], currentFacets: Facet[]) {
-    const facetCuts: FacetCut[] = [];
-
-    return facetCuts;
 }

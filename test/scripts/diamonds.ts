@@ -2,7 +2,7 @@ import { Deployment } from "../../src";
 import hre from "hardhat";
 import { DiamondFacet, DiamondFacet__factory, NFTFacet, NFTFacet__factory } from "../typechain-types";
 import { FacetInitialiserStruct } from "../typechain-types/contracts/Diamond";
-import { FacetConfig, calculateFacetCuts } from "../../src/deployment";
+import { FacetConfig } from "../../src/deployment";
 
 let deployment: Deployment;
 
@@ -28,7 +28,7 @@ async function main() {
         autoUpdate: false,
         facets: facetConfig,
         getProxyConstructorArgs: (facets) => {
-            const facetCuts = calculateFacetCuts(facetConfig, []);
+            const facetCuts = deployment.calculateFacetCuts(facetConfig, []);
 
             const diamondFacet = facets["contracts/DiamondFacet.sol:DiamondFacet"] as DiamondFacet;
             const diamondInit: FacetInitialiserStruct = {
