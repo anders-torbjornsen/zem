@@ -32,6 +32,35 @@
             "env": {
                 "HARDHAT_NETWORK": "ganache"
             }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "ERC1967",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/node_modules/hardhat/internal/cli/cli.js",
+            "args": [
+                "run",
+                "scripts/erc1967.ts"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "ERC1967 (Ganache)",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/node_modules/hardhat/internal/cli/cli.js",
+            "args": [
+                "run",
+                "scripts/erc1967.ts"
+            ],
+            "env": {
+                "HARDHAT_NETWORK": "ganache"
+            }
         }
     ]
 }

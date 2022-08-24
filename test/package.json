@@ -1,5 +1,7 @@
 {
   "devDependencies": {
+    "@openzeppelin/contracts": "^4.7.3",
+    "@openzeppelin/contracts-upgradeable": "^4.7.3",
     "@solidstate/contracts": "^0.0.40",
     "@typechain/hardhat": "^6.1.2",
     "ts-node": "^10.9.1",

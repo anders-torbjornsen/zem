@@ -3,6 +3,7 @@ import "@nomiclabs/hardhat-ethers"
 import * as crypto from "crypto"
 import { Contract, ContractFactory, Signer, BytesLike } from "ethers";
 import { Interface, Fragment } from "@ethersproject/abi";
+import { ContractInterface } from "@ethersproject/contracts";
 import { keccak256 } from "@ethersproject/keccak256";
 import { toUtf8Bytes } from "@ethersproject/strings";
 import { hexlify } from "@ethersproject/bytes";
@@ -16,13 +17,9 @@ interface ContractDeployment {
     buildInfoId: string;  // artifact build info id
 }
 
-interface ERC1967Deployment extends ContractDeployment {
-    implementation: ContractDeployment
-}
-
-interface DeployedContracts {
-    contracts: { [id: string]: ContractDeployment | ERC1967Deployment };
-    facets: { // TODO rename this so it's not diamond specific, and use for erc1967
+interface DeploymentData {
+    contracts: { [id: string]: ContractDeployment };
+    implContracts: {
         byContract: {
             [contract: string]: {
                 [bytecodeHash: string]: {
@@ -31,10 +28,10 @@ interface DeployedContracts {
                 };
             }
         };
-        byAddress: {
+        byAddress: { // TODO don't save this
             [address: string]: {
                 contract: string;
-                version: string;
+                bytecodeHash: string;
             }
         }
     };
@@ -64,7 +61,7 @@ export class Deployment {
     private _hre: HardhatRuntimeEnvironment;
     private _signer: Signer | undefined;
     private _jsonFilePath: string;
-    private _deployedContracts: DeployedContracts;
+    private _deployment: DeploymentData;
     private _instances: { [id: string]: Contract };
     private _proxyInstances: { [id: string]: Contract };
     private _proxyImplInstances: { [id: string]: Contract };
@@ -99,13 +96,13 @@ export class Deployment {
         this._jsonFilePath = `./deployments/${hre.network.name}.json`;
 
         if (fs.existsSync(this._jsonFilePath)) {
-            this._deployedContracts =
+            this._deployment =
                 JSON.parse(fs.readFileSync(this._jsonFilePath).toString());
         }
         else {
-            this._deployedContracts = {
+            this._deployment = {
                 contracts: {},
-                facets: {
+                implContracts: {
                     byContract: {},
                     byAddress: {}
                 },
@@ -119,12 +116,12 @@ export class Deployment {
         contractConfig: ContractDeployConfig,
         ...args: any[]): Promise<Contract> {
 
-        this._deployedContracts.contracts[id] = await this._deploy(
+        this._deployment.contracts[id] = await this._deployContract(
             contractConfig,
             args,
-            this._deployedContracts.contracts[id]);
+            this._deployment.contracts[id]);
 
-        const instance = this._getContractInstance(this._deployedContracts.contracts[id]);
+        const instance = this._getContractInstance(this._deployment.contracts[id]);
 
         this._instances[id] = instance;
         return instance;
@@ -138,29 +135,27 @@ export class Deployment {
         getProxyConstructorArgs?: (implementation: Contract) => any[]):
         Promise<Contract> {
 
-        // TODO rename _deployedContracts to _deployment or something
-        let contractDeployment = this._deployedContracts.contracts[id] as ERC1967Deployment;
+        let contractDeployment = this._deployment.contracts[id];
 
-        const implDeployment = await this._deploy(
-            contractConfig.implementation,
-            [],
-            contractDeployment ? contractDeployment.implementation : undefined);
+        let currentImplAddress = contractDeployment ?
+            await this._getERC1967ImplementationAddress(contractDeployment.address) : undefined;
+
+        const implDeployment = await this._deployImpl(contractConfig.implementation, currentImplAddress);
         const implementation = this._getContractInstance(implDeployment);
 
-        this._deployedContracts.contracts[id] = await this._deploy(
+        this._deployment.contracts[id] = await this._deployContract(
             contractConfig.proxy,
             getProxyConstructorArgs ? getProxyConstructorArgs(implementation) : [],
             contractDeployment);
 
-        contractDeployment = this._deployedContracts.contracts[id] as ERC1967Deployment;
-        contractDeployment.implementation = implDeployment;
+        contractDeployment = this._deployment.contracts[id];
 
         const proxy = this._getContractInstance(contractDeployment);
         const instance = this._getContractInstance(implDeployment, contractDeployment.address);
 
-        let currentImplementation: string =
+        let currentImplementationAddress: string =
             await this._getERC1967ImplementationAddress(contractDeployment.address);
-        if (currentImplementation != implDeployment.address) {
+        if (currentImplementationAddress != implDeployment.address) {
             // TODO update all the logs
             console.log("implementation contract has changed, updating");
             await upgradeFunc(instance, implementation);
@@ -253,18 +248,13 @@ export class Deployment {
             }
             ]`);
 
-        const currentFacets = this._deployedContracts.contracts[id] ?
-            await (new Contract(this._deployedContracts.contracts[id].address, diamondAbi, this._signer)).facets() as IDiamondLoupeFacetStruct[] : [];
+        const currentFacets = this._deployment.contracts[id] ?
+            await (new Contract(this._deployment.contracts[id].address, diamondAbi, this._signer)).facets() as IDiamondLoupeFacetStruct[] : [];
 
         const currentFacetLookup: { [contract: string]: ContractDeployment } = {};
         for (const currentFacet of currentFacets) {
-            const facetInfo = this._deployedContracts.facets.byAddress[currentFacet.facetAddress];
-            currentFacetLookup[facetInfo.contract] = {
-                contract: facetInfo.contract,
-                address: currentFacet.facetAddress,
-                bytecodeHash: facetInfo.version,
-                buildInfoId: this._deployedContracts.facets.byContract[facetInfo.contract][facetInfo.version].buildInfoId
-            };
+            const facetDeployment = this._getImplDeploymentByAddress(currentFacet.facetAddress);
+            currentFacetLookup[facetDeployment.contract] = facetDeployment;
         }
 
         const facets: { [contract: string]: Contract } = {};
@@ -273,46 +263,14 @@ export class Deployment {
             const artifact = this._hre.artifacts.readArtifactSync(facetConfig.contract);
             const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
 
-            let currentDeployedFacet = facetConfig.autoUpdate ?
+            const currentDeployedFacet = facetConfig.autoUpdate ?
                 undefined : currentFacetLookup[fullyQualifiedContractName];
-            // in the case of autoUpdate being true then we always want the latest version of 
-            // the contract, if there is no instance of this facet hooked up to the diamond yet 
-            // then we also want the latest version. So we see if it's already deployed, and if 
-            // not then use undefined so _deploy will deploy it for us
-            if (!currentDeployedFacet) {
-                const buildInfo = await this._hre.artifacts.getBuildInfo(fullyQualifiedContractName);
-                const version = getBytecodeHash(artifact);
-                if (this._deployedContracts.facets.byContract[fullyQualifiedContractName] &&
-                    this._deployedContracts.facets.byContract[fullyQualifiedContractName][version]) {
-                    currentDeployedFacet = {
-                        address: this._deployedContracts.facets.byContract[fullyQualifiedContractName][version].address,
-                        contract: fullyQualifiedContractName,
-                        bytecodeHash: version,
-                        buildInfoId: buildInfo!.id
-                    };
-                }
-            }
 
-            const deployedFacet = await this._deploy(
+            const deployedFacet = await this._deployImpl(
                 facetConfig,
-                [],
-                currentDeployedFacet);
+                currentDeployedFacet ? currentDeployedFacet.address : undefined)
 
             facets[facetConfig.contract] = this._getContractInstance(deployedFacet);
-
-            if (!this._deployedContracts.facets.byContract[deployedFacet.contract]) {
-                this._deployedContracts.facets.byContract[deployedFacet.contract] = {};
-            }
-
-            this._deployedContracts.facets.byContract[deployedFacet.contract][deployedFacet.bytecodeHash] = {
-                address: deployedFacet.address,
-                buildInfoId: deployedFacet.buildInfoId
-            };
-
-            this._deployedContracts.facets.byAddress[deployedFacet.address] = {
-                contract: deployedFacet.contract,
-                version: deployedFacet.bytecodeHash
-            };
         }
 
         // generate proxy constructor args with callback to project code
@@ -320,12 +278,12 @@ export class Deployment {
             getProxyConstructorArgs(facets) : [];
 
         // deploy proxy contract
-        this._deployedContracts.contracts[id] = await this._deploy(
+        this._deployment.contracts[id] = await this._deployContract(
             contractConfig,
             proxyConstructorArgs,
-            this._deployedContracts.contracts[id]);
+            this._deployment.contracts[id]);
 
-        const deployedDiamond = this._deployedContracts.contracts[id];
+        const deployedDiamond = this._deployment.contracts[id];
 
         // use diamond abi for now, as diamondCut() and facets() may not exist in the proxy
         // contract, they could be in a facet
@@ -384,7 +342,7 @@ export class Deployment {
         return diamond;
     }
 
-    private async _deploy(
+    private async _deployContract(
         contractConfig: ContractDeployConfig,
         args: any[],
         currentDeployment?: ContractDeployment): Promise<ContractDeployment> {
@@ -416,28 +374,74 @@ export class Deployment {
             };
         }
 
+        return await this._deploy(fullyQualifiedContractName, artifact.abi, artifact.bytecode, bytecodeHash, args);
+    }
+
+    private async _deployImpl(contractConfig: ContractDeployConfig, currentAddress: string | undefined) {
+        // have to work with fully qualified contract names
+        const artifact = this._hre.artifacts.readArtifactSync(contractConfig.contract);
+        const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
+        const bytecodeHash = getBytecodeHash(artifact);
+
+        // we only want the current deployment if autoUpdate is false
+        let currentDeployment = currentAddress && !contractConfig.autoUpdate ?
+            this._getImplDeploymentByAddress(currentAddress) : undefined;
+
+        // if current deployment is undefined, that contract may well already be deployed as 
+        // multiple proxies can point to the same impl
+        if (!currentDeployment) {
+            currentDeployment = this._getImplDeploymentByContract(fullyQualifiedContractName, bytecodeHash);
+        }
+
+        if (currentDeployment) {
+            return currentDeployment;
+        }
+
+        currentDeployment = await this._deploy(fullyQualifiedContractName, artifact.abi, artifact.bytecode, bytecodeHash, []);
+
+        if (!this._deployment.implContracts.byContract[fullyQualifiedContractName]) {
+            this._deployment.implContracts.byContract[fullyQualifiedContractName] = {};
+        }
+
+        this._deployment.implContracts.byContract[fullyQualifiedContractName][bytecodeHash] = {
+            address: currentDeployment.address,
+            buildInfoId: currentDeployment.buildInfoId
+        };
+
+        this._deployment.implContracts.byAddress[currentDeployment.address] = {
+            contract: fullyQualifiedContractName,
+            bytecodeHash: bytecodeHash
+        };
+
+        return currentDeployment;
+    }
+
+    private async _deploy(
+        fullyQualifiedContractName: string,
+        contractInterface: ContractInterface,
+        bytecode: string,
+        bytecodeHash: string,
+        args: any[]): Promise<ContractDeployment> {
+
         const buildInfo: BuildInfo | undefined =
             await this._hre.artifacts.getBuildInfo(fullyQualifiedContractName);
         if (buildInfo == undefined) {
             throw new Error("buildInfo not found for " + fullyQualifiedContractName);
         }
-        if (this._deployedContracts.artifacts[buildInfo.id] == undefined) {
-            this._deployedContracts.artifacts[buildInfo.id] = buildInfo;
+        if (this._deployment.artifacts[buildInfo.id] == undefined) {
+            this._deployment.artifacts[buildInfo.id] = buildInfo;
         }
 
-        const contractFactory: ContractFactory =
-            await this._hre.ethers.getContractFactoryFromArtifact(artifact, this._signer);
+        const contractFactory = new ContractFactory(contractInterface, bytecode, this._signer);
         const instance: Contract =
             await (await contractFactory.deploy(...args)).deployed();
 
-        console.log("- deployed at", instance.address);
-
-        currentDeployment.contract = fullyQualifiedContractName;
-        currentDeployment.address = instance.address;
-        currentDeployment.bytecodeHash = bytecodeHash;
-        currentDeployment.buildInfoId = buildInfo.id;
-
-        return currentDeployment;
+        return {
+            contract: fullyQualifiedContractName,
+            address: instance.address,
+            bytecodeHash,
+            buildInfoId: buildInfo.id
+        };
     }
 
     private async _getERC1967ImplementationAddress(proxyAddress: string):
@@ -462,8 +466,32 @@ export class Deployment {
 
     private _getContractInstance(contractDeployment: ContractDeployment, address?: string): Contract {
         const [sourceName, contractName] = contractDeployment.contract.split(":");
-        const abi = this._deployedContracts.artifacts[contractDeployment.buildInfoId].output.contracts[sourceName][contractName].abi;
+        const abi = this._deployment.artifacts[contractDeployment.buildInfoId].output.contracts[sourceName][contractName].abi;
         return new Contract(address || contractDeployment.address, abi, this._signer);
+    }
+
+    private _getImplDeploymentByAddress(address: string): ContractDeployment {
+        const deploymentInfo = this._deployment.implContracts.byAddress[address];
+        return {
+            contract: deploymentInfo.contract,
+            address: address,
+            bytecodeHash: deploymentInfo.bytecodeHash,
+            buildInfoId: this._deployment.implContracts.byContract[deploymentInfo.contract][deploymentInfo.bytecodeHash].buildInfoId
+        };
+    }
+
+    private _getImplDeploymentByContract(contract: string, bytecodeHash: string): ContractDeployment | undefined {
+        const contractVersions = this._deployment.implContracts.byContract[contract];
+        if (contractVersions && contractVersions[bytecodeHash]) {
+            return {
+                contract: contract,
+                address: contractVersions[bytecodeHash].address,
+                bytecodeHash: bytecodeHash,
+                buildInfoId: contractVersions[bytecodeHash].buildInfoId
+            };
+        }
+
+        return undefined;
     }
 
     writeToFile(): void {
@@ -474,41 +502,37 @@ export class Deployment {
             }
 
             let usedBuildInfoIds = new Set<string>();
-            for (const contractId in this._deployedContracts.contracts) {
-                let contractDeployment = this._deployedContracts.contracts[contractId];
+            for (const contractId in this._deployment.contracts) {
+                let contractDeployment = this._deployment.contracts[contractId];
 
                 usedBuildInfoIds.add(contractDeployment.buildInfoId);
-
-                let erc1967Deployment = contractDeployment as ERC1967Deployment;
-                if (erc1967Deployment.implementation) {
-                    usedBuildInfoIds.add(erc1967Deployment.implementation.buildInfoId);
-                }
             }
 
-            for (const contract in this._deployedContracts.facets.byContract) {
-                for (const version in this._deployedContracts.facets.byContract[contract]) {
-                    usedBuildInfoIds.add(this._deployedContracts.facets.byContract[contract][version].buildInfoId);
+            for (const contract in this._deployment.implContracts.byContract) {
+                const contractVersions = this._deployment.implContracts.byContract[contract];
+                for (const version in contractVersions) {
+                    usedBuildInfoIds.add(contractVersions[version].buildInfoId);
                 }
             }
 
             let toPrune: string[] = [];
-            for (const buildInfoId in this._deployedContracts.artifacts) {
+            for (const buildInfoId in this._deployment.artifacts) {
                 if (!usedBuildInfoIds.has(buildInfoId) == undefined) {
                     toPrune.push(buildInfoId);
                 }
             }
 
             for (let i = 0; i < toPrune.length; ++i) {
-                delete this._deployedContracts.artifacts[toPrune[i]];
+                delete this._deployment.artifacts[toPrune[i]];
             }
 
             // trim fat from output that we don't use directly in the tool, can always rebuild from
             // input later
             // TODO could use solcjs to compile these on demand and cache locally, so they don't
             // have to pollute source control
-            for (const buildInfoId in this._deployedContracts.artifacts) {
+            for (const buildInfoId in this._deployment.artifacts) {
 
-                const artifact = this._deployedContracts.artifacts[buildInfoId];
+                const artifact = this._deployment.artifacts[buildInfoId];
 
                 delete (artifact.output as any).sources;
 
@@ -525,7 +549,7 @@ export class Deployment {
 
         fs.writeFileSync(
             this._jsonFilePath,
-            JSON.stringify(this._deployedContracts, null, 4));
+            JSON.stringify(this._deployment, null, 4));
     }
 
     calculateDiamondCut(facets: FacetConfig[], currentFacets: IDiamondLoupeFacetStruct[]): FacetCut[] {
@@ -537,7 +561,7 @@ export class Deployment {
 
         const currentFacetAddresses: { [contract: string]: string } = {};
         for (const facet of currentFacets) {
-            currentFacetAddresses[this._deployedContracts.facets.byAddress[facet.facetAddress].contract] = facet.facetAddress;
+            currentFacetAddresses[this._deployment.implContracts.byAddress[facet.facetAddress].contract] = facet.facetAddress;
         }
 
         const selectorToAddress: { [selector: string]: string } = {};
@@ -549,7 +573,7 @@ export class Deployment {
 
             if (!facetAddress || facetAutoUpdate[facet.contract]) {
                 const bytecodeHash = getBytecodeHash(artifact);
-                const deployedFacet = this._deployedContracts.facets.byContract[fullyQualifiedContractName][bytecodeHash];
+                const deployedFacet = this._deployment.implContracts.byContract[fullyQualifiedContractName][bytecodeHash];
                 if (!deployedFacet) {
                     throw new Error(`latest version of '${fullyQualifiedContractName}' contract not found in the deployed facets of deployment`);
                 }
