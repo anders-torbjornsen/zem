@@ -625,8 +625,6 @@ export class Deployment {
                 delete this._deployment.artifacts[toPrune[i]];
             }
 
-            // TODO copy abis to abi cache on deploy
-
             // remove output as it's huge, can be rebuilt from input anyway
             for (const buildInfoId in this._deployment.artifacts) {
                 delete (this._deployment.artifacts[buildInfoId] as any).output;
@@ -642,7 +640,6 @@ export class Deployment {
     }
 
     calculateDiamondCut(facets: FacetConfig[], currentFacets: IDiamondLoupeFacetStruct[]): FacetCut[] {
-        // TODO proper unit testing
         // later we will iterate an array of Facet objects, so build a mapping of facet contract to
         // autoUpdate so it's easy to figure out whether each facet is set to auto update
         const facetAutoUpdate: { [contract: string]: boolean } = {};
