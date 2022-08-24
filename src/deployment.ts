@@ -345,8 +345,7 @@ export class Deployment {
 
         console.log(`deploying: ${contractConfig.contract} | autoUpdate=${contractConfig.autoUpdate || false}`);
 
-        const artifact: Artifact =
-            await this._hre.artifacts.readArtifact(contractConfig.contract);
+        const artifact: Artifact = this._hre.artifacts.readArtifactSync(contractConfig.contract);
         const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
 
         const bytecodeHash = getBytecodeHash(artifact);
@@ -482,7 +481,8 @@ export class Deployment {
             currentFacetAddresses[this._deployedContracts.facets.byAddress[facet.facetAddress].contract] = facet.facetAddress;
         }
 
-        const neededFacets = getFacets(facets, this._hre).map((facet) => {
+        const selectorToAddress: { [selector: string]: string } = {};
+        for (const facet of getFacets(facets, this._hre)) {
             const artifact = this._hre.artifacts.readArtifactSync(facet.contract);
             const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
 
@@ -497,20 +497,77 @@ export class Deployment {
                 facetAddress = deployedFacet.address;
             }
 
-            return {
-                facetAddress,
-                functionSelectors: facet.selectors
-            };
-        });
+            for (const selector of facet.selectors) {
+                selectorToAddress[hexlify(selector)] = facetAddress;
+            }
+        }
 
-        // TODO calculate deltas
-        return neededFacets.map((facet) => {
-            return {
-                facetAddress: facet.facetAddress,
-                action: FacetCutAction.Add,
-                functionSelectors: facet.functionSelectors
-            };
-        })
+        const addressToNeededCuts: {
+            [address: string]: {
+                add: string[];
+                update: string[];
+                remove: string[];
+            }
+        } = {};
+        const getOrCreateNeededCuts = (address: string) => {
+            if (!addressToNeededCuts[address]) {
+                addressToNeededCuts[address] = { add: [], update: [], remove: [] };
+            }
+            return addressToNeededCuts[address];
+        };
+        for (const currentFacet of currentFacets) {
+            for (const functionSelector of currentFacet.functionSelectors) {
+                const selectorStr = hexlify(functionSelector);
+                const neededAddress = selectorToAddress[selectorStr];
+
+                if (neededAddress != currentFacet.facetAddress) {
+                    if (neededAddress) {
+                        // update
+                        getOrCreateNeededCuts(neededAddress).update.push(selectorStr);
+                    }
+                    else {
+                        // remove
+                        getOrCreateNeededCuts(neededAddress).remove.push(selectorStr);
+                    }
+                }
+
+                // remove processed selectors from the map, any which are left at the end of this
+                // loop need to be added
+                delete selectorToAddress[selectorStr];
+            }
+        }
+
+        for (const selector in selectorToAddress) {
+            // add
+            getOrCreateNeededCuts(selectorToAddress[selector]).add.push(selector);
+        }
+
+        const facetCuts: FacetCut[] = [];
+        for (const address in addressToNeededCuts) {
+            if (addressToNeededCuts[address].add.length) {
+                facetCuts.push({
+                    facetAddress: address,
+                    action: FacetCutAction.Add,
+                    functionSelectors: addressToNeededCuts[address].add
+                })
+            }
+            if (addressToNeededCuts[address].update.length) {
+                facetCuts.push({
+                    facetAddress: address,
+                    action: FacetCutAction.Update,
+                    functionSelectors: addressToNeededCuts[address].update
+                })
+            }
+            if (addressToNeededCuts[address].remove.length) {
+                facetCuts.push({
+                    facetAddress: address,
+                    action: FacetCutAction.Remove,
+                    functionSelectors: addressToNeededCuts[address].remove
+                })
+            }
+        }
+
+        return facetCuts;
     }
 }
 
@@ -576,12 +633,7 @@ export function getFacets(facets: FacetConfig[], hre: HardhatRuntimeEnvironment)
         }
         if (facetConfig.selectorsToIgnore) {
             for (const selector of facetConfig.selectorsToIgnore) {
-                if (typeof (selector) === "string") {
-                    selectorsToIgnore.add(selector);
-                }
-                else {
-                    selectorsToIgnore.add(hexlify(selector));
-                }
+                selectorsToIgnore.add(hexlify(selector));
             }
         }
 
