@@ -20,20 +20,12 @@ interface ContractDeployment {
 interface DeploymentData {
     contracts: { [id: string]: ContractDeployment };
     implContracts: {
-        byContract: {
-            [contract: string]: {
-                [bytecodeHash: string]: {
-                    address: string;
-                    buildInfoId: string
-                };
-            }
+        [contract: string]: {
+            [bytecodeHash: string]: {
+                address: string;
+                buildInfoId: string
+            };
         };
-        byAddress: { // TODO don't save this
-            [address: string]: {
-                contract: string;
-                bytecodeHash: string;
-            }
-        }
     };
     artifacts: { [buildInfoId: string]: BuildInfo };
 }
@@ -62,6 +54,7 @@ export class Deployment {
     private _signer: Signer | undefined;
     private _jsonFilePath: string;
     private _deployment: DeploymentData;
+    private _implContractsByAddress: { [address: string]: { contract: string, bytecodeHash: string } };
     private _instances: { [id: string]: Contract };
     private _proxyInstances: { [id: string]: Contract };
     private _proxyImplInstances: { [id: string]: Contract };
@@ -102,12 +95,21 @@ export class Deployment {
         else {
             this._deployment = {
                 contracts: {},
-                implContracts: {
-                    byContract: {},
-                    byAddress: {}
-                },
+                implContracts: {},
                 artifacts: {}
             };
+        }
+
+        this._implContractsByAddress = {};
+        for (const contract in this._deployment.implContracts) {
+            for (const bytecodeHash in this._deployment.implContracts[contract]) {
+                const instance = this._deployment.implContracts[contract][bytecodeHash];
+
+                this._implContractsByAddress[instance.address] = {
+                    contract,
+                    bytecodeHash
+                }
+            }
         }
     }
 
@@ -160,7 +162,6 @@ export class Deployment {
         let currentImplementationAddress: string =
             await this._getERC1967ImplementationAddress(contractDeployment.address);
         if (currentImplementationAddress != implDeployment.address) {
-            // TODO update all the logs
             console.log("- implementation contract has changed, updating");
             await upgradeFunc(instance, implementation);
 
@@ -410,16 +411,16 @@ export class Deployment {
         currentDeployment = await this._deploy(fullyQualifiedContractName, artifact.abi, artifact.bytecode, bytecodeHash, []);
         console.log(` - deployed | address:${currentDeployment.address} | bytecodeHash:${currentDeployment.bytecodeHash}`);
 
-        if (!this._deployment.implContracts.byContract[fullyQualifiedContractName]) {
-            this._deployment.implContracts.byContract[fullyQualifiedContractName] = {};
+        if (!this._deployment.implContracts[fullyQualifiedContractName]) {
+            this._deployment.implContracts[fullyQualifiedContractName] = {};
         }
 
-        this._deployment.implContracts.byContract[fullyQualifiedContractName][bytecodeHash] = {
+        this._deployment.implContracts[fullyQualifiedContractName][bytecodeHash] = {
             address: currentDeployment.address,
             buildInfoId: currentDeployment.buildInfoId
         };
 
-        this._deployment.implContracts.byAddress[currentDeployment.address] = {
+        this._implContractsByAddress[currentDeployment.address] = {
             contract: fullyQualifiedContractName,
             bytecodeHash: bytecodeHash
         };
@@ -482,17 +483,17 @@ export class Deployment {
     }
 
     private _getImplDeploymentByAddress(address: string): ContractDeployment {
-        const deploymentInfo = this._deployment.implContracts.byAddress[address];
+        const deploymentInfo = this._implContractsByAddress[address];
         return {
             contract: deploymentInfo.contract,
             address: address,
             bytecodeHash: deploymentInfo.bytecodeHash,
-            buildInfoId: this._deployment.implContracts.byContract[deploymentInfo.contract][deploymentInfo.bytecodeHash].buildInfoId
+            buildInfoId: this._deployment.implContracts[deploymentInfo.contract][deploymentInfo.bytecodeHash].buildInfoId
         };
     }
 
     private _getImplDeploymentByContract(contract: string, bytecodeHash: string): ContractDeployment | undefined {
-        const contractVersions = this._deployment.implContracts.byContract[contract];
+        const contractVersions = this._deployment.implContracts[contract];
         if (contractVersions && contractVersions[bytecodeHash]) {
             return {
                 contract: contract,
@@ -519,8 +520,8 @@ export class Deployment {
                 usedBuildInfoIds.add(contractDeployment.buildInfoId);
             }
 
-            for (const contract in this._deployment.implContracts.byContract) {
-                const contractVersions = this._deployment.implContracts.byContract[contract];
+            for (const contract in this._deployment.implContracts) {
+                const contractVersions = this._deployment.implContracts[contract];
                 for (const version in contractVersions) {
                     usedBuildInfoIds.add(contractVersions[version].buildInfoId);
                 }
@@ -564,7 +565,7 @@ export class Deployment {
     }
 
     calculateDiamondCut(facets: FacetConfig[], currentFacets: IDiamondLoupeFacetStruct[]): FacetCut[] {
-        // TODO include a test for autoupdate
+        // TODO proper unit testing
         const facetAutoUpdate: { [contract: string]: boolean } = {};
         for (const facet of facets) {
             facetAutoUpdate[facet.contract] = facet.autoUpdate || false;
@@ -572,7 +573,7 @@ export class Deployment {
 
         const currentFacetAddresses: { [contract: string]: string } = {};
         for (const facet of currentFacets) {
-            currentFacetAddresses[this._deployment.implContracts.byAddress[facet.facetAddress].contract] = facet.facetAddress;
+            currentFacetAddresses[this._implContractsByAddress[facet.facetAddress].contract] = facet.facetAddress;
         }
 
         const selectorToAddress: { [selector: string]: string } = {};
@@ -584,7 +585,7 @@ export class Deployment {
 
             if (!facetAddress || facetAutoUpdate[facet.contract]) {
                 const bytecodeHash = getBytecodeHash(artifact);
-                const deployedFacet = this._deployment.implContracts.byContract[fullyQualifiedContractName][bytecodeHash];
+                const deployedFacet = this._deployment.implContracts[fullyQualifiedContractName][bytecodeHash];
                 if (!deployedFacet) {
                     throw new Error(`latest version of '${fullyQualifiedContractName}' contract not found in the deployed facets of deployment`);
                 }
