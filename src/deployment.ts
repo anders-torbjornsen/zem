@@ -58,6 +58,7 @@ export class Deployment {
     private _instances: { [id: string]: Contract };
     private _proxyInstances: { [id: string]: Contract };
     private _proxyImplInstances: { [id: string]: Contract };
+    private _facetInstances: { [id: string]: { [contract: string]: Contract } };
 
     public get hre() {
         return this._hre;
@@ -74,6 +75,9 @@ export class Deployment {
     public get proxyImplInstances() {
         return this._proxyImplInstances;
     }
+    public get facetInstances() {
+        return this._facetInstances;
+    }
 
     static async create(hre: HardhatRuntimeEnvironment, signer?: Signer) {
         return new Deployment(hre, signer || (await hre.ethers.getSigners())[0]);
@@ -81,8 +85,9 @@ export class Deployment {
 
     private constructor(hre: HardhatRuntimeEnvironment, signer: Signer) {
         this._instances = {};
-        this._proxyInstances = {}; // TODO put diamond proxies in here too
-        this._proxyImplInstances = {}; // TODO this but for facets
+        this._proxyInstances = {};
+        this._proxyImplInstances = {};
+        this._facetInstances = {};
 
         this._hre = hre;
         this._signer = signer;
@@ -262,7 +267,7 @@ export class Deployment {
             currentFacetLookup[facetDeployment.contract] = facetDeployment;
         }
 
-        const facets: { [contract: string]: Contract } = {};
+        this._facetInstances[id] = {};
         for (const facetConfig of contractConfig.facets) {
             // have to work with fully qualified contract names
             const artifact = this._hre.artifacts.readArtifactSync(facetConfig.contract);
@@ -275,12 +280,12 @@ export class Deployment {
                 facetConfig,
                 currentDeployedFacet ? currentDeployedFacet.address : undefined)
 
-            facets[facetConfig.contract] = this._getContractInstance(deployedFacet);
+            this._facetInstances[id][facetConfig.contract] = this._getContractInstance(deployedFacet);
         }
 
         // generate proxy constructor args with callback to project code
         const proxyConstructorArgs = getProxyConstructorArgs ?
-            getProxyConstructorArgs(facets) : [];
+            getProxyConstructorArgs(this._facetInstances[id]) : [];
 
         // deploy proxy contract
         this._deployment.contracts[id] = await this._deployContract(
@@ -288,11 +293,12 @@ export class Deployment {
             proxyConstructorArgs,
             this._deployment.contracts[id]);
 
-        const deployedDiamond = this._deployment.contracts[id];
+        const deployedProxy = this._deployment.contracts[id];
+        const proxy = this._getContractInstance(deployedProxy);
 
         // use diamond abi for now, as diamondCut() and facets() may not exist in the proxy
         // contract, they could be in a facet
-        const diamondProxy = new Contract(deployedDiamond.address, diamondAbi, this._signer);
+        const diamondProxy = new Contract(deployedProxy.address, diamondAbi, this._signer);
 
         // apply diamond cut if needed
         const diamondCut = this.calculateDiamondCut(contractConfig.facets, await diamondProxy.facets());
@@ -311,13 +317,14 @@ export class Deployment {
         const allIdentifiers = new Set<string>();
 
         const combinedInterface: Fragment[] =
-            this._getContractInstance(deployedDiamond).interface.fragments.map((fragment) => {
+            proxy.interface.fragments.map((fragment) => {
                 if (fragment.type == "function" || fragment.type == "event") {
                     allIdentifiers.add(fragment.format());
                 }
                 return fragment;
             });
 
+        const facets = this._facetInstances[id];
         for (const facet in facets) {
             for (const fragment of facets[facet].interface.fragments) {
                 if (fragment.type == "function") {
@@ -340,9 +347,10 @@ export class Deployment {
             }
         }
 
-        const diamond = new Contract(deployedDiamond.address, combinedInterface, this._signer);
+        const diamond = new Contract(deployedProxy.address, combinedInterface, this._signer);
 
         this._instances[id] = diamond;
+        this._proxyInstances[id] = proxy;
 
         return diamond;
     }
