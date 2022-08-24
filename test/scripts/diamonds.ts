@@ -13,30 +13,30 @@ async function main() {
 
     const facetConfig: FacetConfig[] = [
         {
-            contract: "contracts/DiamondFacet.sol:DiamondFacet",
+            contract: "DiamondFacet",
             functionsToIgnore: ["init"]
         },
         {
-            contract: "contracts/NFTFacet.sol:NFTFacet",
+            contract: "NFTFacet",
             functionsToIgnore: ["init"]
         }
     ];
 
     const diamondProxy = await deployment.deployDiamond("diamond", {
-        contract: "contracts/Diamond.sol:Diamond",
+        contract: "Diamond",
         autoUpdate: false,
         facets: facetConfig
     }, (facets) => {
         const facetCuts = deployment.calculateFacetCuts(facetConfig, []);
 
-        const diamondFacet = facets["contracts/DiamondFacet.sol:DiamondFacet"] as DiamondFacet;
+        const diamondFacet = facets["DiamondFacet"] as DiamondFacet;
         const diamondInit: FacetInitialiserStruct = {
             facetCuts: [],
             target: diamondFacet.address,
             data: diamondFacet.interface.encodeFunctionData("init")
         };
 
-        const nftFacet = facets["contracts/NFTFacet.sol:NFTFacet"] as NFTFacet;
+        const nftFacet = facets["NFTFacet"] as NFTFacet;
         const nftInit: FacetInitialiserStruct = {
             facetCuts: [],
             target: nftFacet.address,
@@ -76,26 +76,26 @@ async function main() {
     }
 
     const diamondProxyCopy = await deployment.deployDiamond("diamond", {
-        contract: "contracts/Diamond.sol:Diamond",
+        contract: "Diamond",
         autoUpdate: false,
         facets: facetConfig
     });
 
     const diamondProxy2 = await deployment.deployDiamond("diamond2", {
-        contract: "contracts/Diamond.sol:Diamond",
+        contract: "Diamond",
         autoUpdate: false,
         facets: facetConfig
     }, (facets) => {
         const facetCuts = deployment.calculateFacetCuts(facetConfig, []);
 
-        const diamondFacet = facets["contracts/DiamondFacet.sol:DiamondFacet"] as DiamondFacet;
+        const diamondFacet = facets["DiamondFacet"] as DiamondFacet;
         const diamondInit: FacetInitialiserStruct = {
             facetCuts: [],
             target: diamondFacet.address,
             data: diamondFacet.interface.encodeFunctionData("init")
         };
 
-        const nftFacet = facets["contracts/NFTFacet.sol:NFTFacet"] as NFTFacet;
+        const nftFacet = facets["NFTFacet"] as NFTFacet;
         const nftInit: FacetInitialiserStruct = {
             facetCuts: [],
             target: nftFacet.address,

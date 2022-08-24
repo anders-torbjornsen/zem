@@ -28,7 +28,7 @@ interface DeployedFacet { // TODO inline this in the facets bit, already enough 
 
 interface DeployedContracts {
     contracts: { [id: string]: ContractDeployment | ERC1967Deployment };
-    facets: { // TODO should probably do this for regular proxy impl contracts
+    facets: { // TODO rename this so it's not diamond specific, and use for erc1967
         byContract: {
             [contract: string]: {
                 [bytecodeHash: string]: DeployedFacet
@@ -272,20 +272,24 @@ export class Deployment {
 
         const facets: { [contract: string]: Contract } = {};
         for (const facetConfig of contractConfig.facets) {
-            let currentDeployedFacet = facetConfig.autoUpdate ? undefined : currentFacetLookup[facetConfig.contract];
+            // have to work with fully qualified contract names
+            const artifact = this._hre.artifacts.readArtifactSync(facetConfig.contract);
+            const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
+
+            let currentDeployedFacet = facetConfig.autoUpdate ?
+                undefined : currentFacetLookup[fullyQualifiedContractName];
             // in the case of autoUpdate being true then we always want the latest version of 
             // the contract, if there is no instance of this facet hooked up to the diamond yet 
             // then we also want the latest version. So we see if it's already deployed, and if 
             // not then use undefined so _deploy will deploy it for us
             if (!currentDeployedFacet) {
-                const artifact = this._hre.artifacts.readArtifactSync(facetConfig.contract);
-                const buildInfo = await this._hre.artifacts.getBuildInfo(facetConfig.contract);
+                const buildInfo = await this._hre.artifacts.getBuildInfo(fullyQualifiedContractName);
                 const version = getBytecodeHash(artifact);
-                if (this._deployedContracts.facets.byContract[facetConfig.contract] &&
-                    this._deployedContracts.facets.byContract[facetConfig.contract][version]) {
+                if (this._deployedContracts.facets.byContract[fullyQualifiedContractName] &&
+                    this._deployedContracts.facets.byContract[fullyQualifiedContractName][version]) {
                     currentDeployedFacet = {
-                        address: this._deployedContracts.facets.byContract[facetConfig.contract][version].address,
-                        contract: facetConfig.contract,
+                        address: this._deployedContracts.facets.byContract[fullyQualifiedContractName][version].address,
+                        contract: fullyQualifiedContractName,
                         bytecodeHash: version,
                         buildInfoId: buildInfo!.id
                     };
@@ -339,12 +343,11 @@ export class Deployment {
         args: any[],
         currentDeployment?: ContractDeployment): Promise<ContractDeployment> {
 
-        contractConfig.autoUpdate = contractConfig.autoUpdate || false;
-
-        console.log(`deploying: ${contractConfig.contract} | autoUpdate=${contractConfig.autoUpdate}`);
+        console.log(`deploying: ${contractConfig.contract} | autoUpdate=${contractConfig.autoUpdate || false}`);
 
         const artifact: Artifact =
             await this._hre.artifacts.readArtifact(contractConfig.contract);
+        const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
 
         const bytecodeHash = getBytecodeHash(artifact);
 
@@ -369,23 +372,22 @@ export class Deployment {
         }
 
         const buildInfo: BuildInfo | undefined =
-            await this._hre.artifacts.getBuildInfo(contractConfig.contract);
+            await this._hre.artifacts.getBuildInfo(fullyQualifiedContractName);
         if (buildInfo == undefined) {
-            throw new Error("buildInfo not found for " + contractConfig.contract);
+            throw new Error("buildInfo not found for " + fullyQualifiedContractName);
         }
         if (this._deployedContracts.artifacts[buildInfo.id] == undefined) {
             this._deployedContracts.artifacts[buildInfo.id] = buildInfo;
         }
 
         const contractFactory: ContractFactory =
-            await this._hre.ethers.getContractFactory(
-                contractConfig.contract, this._signer);
+            await this._hre.ethers.getContractFactoryFromArtifact(artifact, this._signer);
         const instance: Contract =
             await (await contractFactory.deploy(...args)).deployed();
 
         console.log("- deployed at", instance.address);
 
-        currentDeployment.contract = `${artifact.sourceName}:${artifact.contractName}`;
+        currentDeployment.contract = fullyQualifiedContractName;
         currentDeployment.address = instance.address;
         currentDeployment.bytecodeHash = bytecodeHash;
         currentDeployment.buildInfoId = buildInfo.id;
@@ -481,14 +483,16 @@ export class Deployment {
         }
 
         const neededFacets = getFacets(facets, this._hre).map((facet) => {
-            let facetAddress = currentFacetAddresses[facet.contract];
+            const artifact = this._hre.artifacts.readArtifactSync(facet.contract);
+            const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
+
+            let facetAddress = currentFacetAddresses[fullyQualifiedContractName];
 
             if (!facetAddress || facetAutoUpdate[facet.contract]) {
-                const facetArtifact = this._hre.artifacts.readArtifactSync(facet.contract);
-                const bytecodeHash = getBytecodeHash(facetArtifact);
-                const deployedFacet = this._deployedContracts.facets.byContract[facet.contract][bytecodeHash];
+                const bytecodeHash = getBytecodeHash(artifact);
+                const deployedFacet = this._deployedContracts.facets.byContract[fullyQualifiedContractName][bytecodeHash];
                 if (!deployedFacet) {
-                    throw new Error(`latest version of '${facet.contract}' contract not found in the deployed facets of deployment`);
+                    throw new Error(`latest version of '${fullyQualifiedContractName}' contract not found in the deployed facets of deployment`);
                 }
                 facetAddress = deployedFacet.address;
             }
