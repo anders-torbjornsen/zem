@@ -1,5 +1,6 @@
 node_modules
 test/artifacts
 test/typechain-types
-test/cache/
-test/lib/
+test/cache
+test/lib
+test/deployments

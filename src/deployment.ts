@@ -502,11 +502,21 @@ export class Deployment {
                 delete this._deployedContracts.artifacts[toPrune[i]];
             }
 
-            // clear output section of artifacts as it's massive, we can
-            // always rebuild it when needed
-            for (const artifact in this._deployedContracts.artifacts) {
-                delete (this._deployedContracts.artifacts[artifact] as any)
-                    .output;
+            // trim fat from output that we don't use directly in the tool, can always rebuild from
+            // input later
+            // TODO could use solcjs to compile these on demand and cache locally, so they don't
+            // have to pollute source control
+            for (const buildInfoId in this._deployedContracts.artifacts) {
+
+                const artifact = this._deployedContracts.artifacts[buildInfoId];
+
+                delete (artifact.output as any).sources;
+
+                for (const source in artifact.output.contracts) {
+                    for (const contract in artifact.output.contracts[source]) {
+                        delete (artifact.output.contracts[source][contract] as any).evm;
+                    }
+                }
             }
         }
         catch (e) {
