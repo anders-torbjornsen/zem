@@ -188,12 +188,114 @@ export class Deployment {
 
         console.log(`deployDiamond(${id})`);
 
+        const diamondAbi = new Interface(`[
+            {
+                "inputs": [
+                {
+                    "components": [
+                    {
+                        "internalType": "address",
+                        "name": "facetAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "enum IDiamondCut.FacetCutAction",
+                        "name": "action",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "bytes4[]",
+                        "name": "functionSelectors",
+                        "type": "bytes4[]"
+                    }
+                    ],
+                    "internalType": "struct IDiamondCut.FacetCut[]",
+                    "name": "facetCuts",
+                    "type": "tuple[]"
+                },
+                {
+                    "internalType": "address",
+                    "name": "_init",
+                    "type": "address"
+                },
+                {
+                    "internalType": "bytes",
+                    "name": "_calldata",
+                    "type": "bytes"
+                }
+                ],
+                "name": "diamondCut",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "facets",
+                "outputs": [
+                {
+                    "components": [
+                    {
+                        "internalType": "address",
+                        "name": "facetAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bytes4[]",
+                        "name": "functionSelectors",
+                        "type": "bytes4[]"
+                    }
+                    ],
+                    "internalType": "struct IDiamondLoupe.Facet[]",
+                    "name": "facets_",
+                    "type": "tuple[]"
+                }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            }
+            ]`);
+
+        const currentFacets = this._deployedContracts.contracts[id] ?
+            await (new Contract(this._deployedContracts.contracts[id].address, diamondAbi, this._signer)).facets() as IDiamondLoupeFacetStruct[] : [];
+
+        const currentFacetLookup: { [contract: string]: ContractDeployment } = {};
+        for (const currentFacet of currentFacets) {
+            const facetInfo = this._deployedContracts.facets.byAddress[currentFacet.facetAddress];
+            currentFacetLookup[facetInfo.contract] = {
+                contract: facetInfo.contract,
+                address: currentFacet.facetAddress,
+                bytecodeHash: facetInfo.version,
+                buildInfoId: this._deployedContracts.facets.byContract[facetInfo.contract][facetInfo.version].buildInfoId
+            };
+        }
+
         const facets: { [contract: string]: Contract } = {};
         for (const facetConfig of contractConfig.facets) {
+            let currentDeployedFacet = facetConfig.autoUpdate ? undefined : currentFacetLookup[facetConfig.contract];
+            // in the case of autoUpdate being true then we always want the latest version of 
+            // the contract, if there is no instance of this facet hooked up to the diamond yet 
+            // then we also want the latest version. So we see if it's already deployed, and if 
+            // not then use undefined so _deploy will deploy it for us
+            if (!currentDeployedFacet) {
+                const artifact = this._hre.artifacts.readArtifactSync(facetConfig.contract);
+                const buildInfo = await this._hre.artifacts.getBuildInfo(facetConfig.contract);
+                const version = getBytecodeHash(artifact);
+                if (this._deployedContracts.facets.byContract[facetConfig.contract] &&
+                    this._deployedContracts.facets.byContract[facetConfig.contract][version]) {
+                    currentDeployedFacet = {
+                        address: this._deployedContracts.facets.byContract[facetConfig.contract][version].address,
+                        contract: facetConfig.contract,
+                        bytecodeHash: version,
+                        buildInfoId: buildInfo!.id
+                    };
+                }
+            }
+
             const deployedFacet = await this._deploy(
                 facetConfig,
                 [],
-                undefined);
+                currentDeployedFacet);
 
             facets[facetConfig.contract] = this._getContractInstance(deployedFacet);
 
@@ -201,10 +303,14 @@ export class Deployment {
                 this._deployedContracts.facets.byContract[deployedFacet.contract] = {};
             }
 
-            // TODO do we still need byAddress??
             this._deployedContracts.facets.byContract[deployedFacet.contract][deployedFacet.bytecodeHash] = {
                 address: deployedFacet.address,
                 buildInfoId: deployedFacet.buildInfoId
+            };
+
+            this._deployedContracts.facets.byAddress[deployedFacet.address] = {
+                contract: deployedFacet.contract,
+                version: deployedFacet.bytecodeHash
             };
         }
 
@@ -215,74 +321,6 @@ export class Deployment {
             contractConfig,
             proxyConstructorArgs,
             this._deployedContracts.contracts[id]);
-
-        const diamondAbi = new Interface(`[
-        {
-            "inputs": [
-            {
-                "components": [
-                {
-                    "internalType": "address",
-                    "name": "facetAddress",
-                    "type": "address"
-                },
-                {
-                    "internalType": "enum IDiamondCut.FacetCutAction",
-                    "name": "action",
-                    "type": "uint8"
-                },
-                {
-                    "internalType": "bytes4[]",
-                    "name": "functionSelectors",
-                    "type": "bytes4[]"
-                }
-                ],
-                "internalType": "struct IDiamondCut.FacetCut[]",
-                "name": "facetCuts",
-                "type": "tuple[]"
-            },
-            {
-                "internalType": "address",
-                "name": "_init",
-                "type": "address"
-            },
-            {
-                "internalType": "bytes",
-                "name": "_calldata",
-                "type": "bytes"
-            }
-            ],
-            "name": "diamondCut",
-            "outputs": [],
-            "stateMutability": "nonpayable",
-            "type": "function"
-        },
-        {
-            "inputs": [],
-            "name": "facets",
-            "outputs": [
-            {
-                "components": [
-                {
-                    "internalType": "address",
-                    "name": "facetAddress",
-                    "type": "address"
-                },
-                {
-                    "internalType": "bytes4[]",
-                    "name": "functionSelectors",
-                    "type": "bytes4[]"
-                }
-                ],
-                "internalType": "struct IDiamondLoupe.Facet[]",
-                "name": "facets_",
-                "type": "tuple[]"
-            }
-            ],
-            "stateMutability": "view",
-            "type": "function"
-        }
-        ]`);
 
         const deployedDiamond = this._deployedContracts.contracts[id];
 
@@ -300,6 +338,8 @@ export class Deployment {
         contractConfig: ContractDeployConfig,
         args: any[],
         currentDeployment?: ContractDeployment): Promise<ContractDeployment> {
+
+        contractConfig.autoUpdate = contractConfig.autoUpdate || false;
 
         console.log(`deploying: ${contractConfig.contract} | autoUpdate=${contractConfig.autoUpdate}`);
 
