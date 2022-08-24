@@ -116,6 +116,8 @@ export class Deployment {
         contractConfig: ContractDeployConfig,
         ...args: any[]): Promise<Contract> {
 
+        console.log(`deploy(${id})`);
+
         this._deployment.contracts[id] = await this._deployContract(
             contractConfig,
             args,
@@ -134,6 +136,8 @@ export class Deployment {
             (proxy: Contract, newImplementation: Contract) => Promise<void>,
         getProxyConstructorArgs?: (implementation: Contract) => any[]):
         Promise<Contract> {
+
+        console.log(`deployERC1967(${id})`);
 
         let contractDeployment = this._deployment.contracts[id];
 
@@ -157,12 +161,12 @@ export class Deployment {
             await this._getERC1967ImplementationAddress(contractDeployment.address);
         if (currentImplementationAddress != implDeployment.address) {
             // TODO update all the logs
-            console.log("implementation contract has changed, updating");
+            console.log("- implementation contract has changed, updating");
             await upgradeFunc(instance, implementation);
 
             if (await this._getERC1967ImplementationAddress(contractDeployment.address) !=
                 implDeployment.address) {
-                throw "failed to update implementation to the correct address";
+                throw new Error("failed to update implementation to the correct address");
             }
         }
 
@@ -347,19 +351,19 @@ export class Deployment {
         args: any[],
         currentDeployment?: ContractDeployment): Promise<ContractDeployment> {
 
-        console.log(`deploying: ${contractConfig.contract} | autoUpdate=${contractConfig.autoUpdate || false}`);
-
         const artifact: Artifact = this._hre.artifacts.readArtifactSync(contractConfig.contract);
         const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
+
+        console.log(`- deploy contract | ${fullyQualifiedContractName} | autoUpdate:${contractConfig.autoUpdate || false}`);
 
         const bytecodeHash = getBytecodeHash(artifact);
 
         if (currentDeployment) {
-            console.log(`- already deployed at ${currentDeployment.address}`);
+            console.log(` - already deployed | address:${currentDeployment.address}`);
 
             if (currentDeployment.bytecodeHash != bytecodeHash &&
                 contractConfig.autoUpdate) {
-                console.log(`- out of date (${currentDeployment.bytecodeHash} -> ${bytecodeHash})`);
+                console.log(` - out of date (${currentDeployment.bytecodeHash} -> ${bytecodeHash})`);
             }
             else {
                 return currentDeployment;
@@ -374,7 +378,10 @@ export class Deployment {
             };
         }
 
-        return await this._deploy(fullyQualifiedContractName, artifact.abi, artifact.bytecode, bytecodeHash, args);
+        const deployment = await this._deploy(fullyQualifiedContractName, artifact.abi, artifact.bytecode, bytecodeHash, args);
+        console.log(` - deployed | address:${deployment.address}`);
+
+        return deployment;
     }
 
     private async _deployImpl(contractConfig: ContractDeployConfig, currentAddress: string | undefined) {
@@ -382,6 +389,8 @@ export class Deployment {
         const artifact = this._hre.artifacts.readArtifactSync(contractConfig.contract);
         const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
         const bytecodeHash = getBytecodeHash(artifact);
+
+        console.log(`- deploy impl contract | ${fullyQualifiedContractName} | autoUpdate:${contractConfig.autoUpdate || false}`)
 
         // we only want the current deployment if autoUpdate is false
         let currentDeployment = currentAddress && !contractConfig.autoUpdate ?
@@ -394,10 +403,12 @@ export class Deployment {
         }
 
         if (currentDeployment) {
+            console.log(` - already deployed | address:${currentDeployment.address} | bytecodeHash:${currentDeployment.bytecodeHash}`);
             return currentDeployment;
         }
 
         currentDeployment = await this._deploy(fullyQualifiedContractName, artifact.abi, artifact.bytecode, bytecodeHash, []);
+        console.log(` - deployed | address:${currentDeployment.address} | bytecodeHash:${currentDeployment.bytecodeHash}`);
 
         if (!this._deployment.implContracts.byContract[fullyQualifiedContractName]) {
             this._deployment.implContracts.byContract[fullyQualifiedContractName] = {};
