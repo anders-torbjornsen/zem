@@ -59,6 +59,7 @@ export class Deployment {
     private _proxyInstances: { [id: string]: Contract };
     private _proxyImplInstances: { [id: string]: Contract };
     private _facetInstances: { [id: string]: { [contract: string]: Contract } };
+    private _abiCachePath: string;
     private _abiCache: { [buildInfoId: string]: { [contract: string]: any } };
     private _solc: any;
     private _compilers: { [version: string]: any };
@@ -91,7 +92,9 @@ export class Deployment {
         this._proxyInstances = {};
         this._proxyImplInstances = {};
         this._facetInstances = {};
-        this._abiCache = {};
+        this._abiCachePath = `${hre.config.paths.cache}/zem-abi-cache.json`;
+        this._abiCache = fs.existsSync(this._abiCachePath) ?
+            JSON.parse(fs.readFileSync(this._abiCachePath).toString()) : {};
         this._compilers = {};
 
         this._hre = hre;
@@ -398,14 +401,6 @@ export class Deployment {
                 return currentDeployment;
             }
         }
-        else {
-            currentDeployment = {
-                contract: "",
-                address: "",
-                bytecodeHash: "",
-                buildInfoId: ""
-            };
-        }
 
         const deployment = await this._deploy(
             fullyQualifiedContractName,
@@ -488,6 +483,10 @@ export class Deployment {
         const instance: Contract =
             await (await contractFactory.deploy(...args)).deployed();
 
+        if (!this._abiCache[buildInfo.id]) {
+            this._addToAbiCache(buildInfo.id, buildInfo.output);
+        }
+
         return {
             contract: fullyQualifiedContractName,
             address: instance.address,
@@ -553,14 +552,21 @@ export class Deployment {
         console.log(`compiling ${buildInfoId} with solc ${solcVersion}`)
         const output = JSON.parse(this._compilers[solcVersion].compile(JSON.stringify(buildInfo.input)));
 
+        this._addToAbiCache(buildInfoId, output);
+
+        return this._abiCache[buildInfoId][contract];
+    }
+
+    private _addToAbiCache(buildInfoId: string, compilerOutput: any) {
         this._abiCache[buildInfoId] = {};
-        for (const source in output.contracts) {
-            for (const contract in output.contracts[source]) {
-                this._abiCache[buildInfoId][`${source}:${contract}`] = output.contracts[source][contract].abi;
+
+        for (const source in compilerOutput.contracts) {
+            for (const contract in compilerOutput.contracts[source]) {
+                this._abiCache[buildInfoId][`${source}:${contract}`] = compilerOutput.contracts[source][contract].abi;
             }
         }
 
-        return this._abiCache[buildInfoId][contract];
+        fs.writeFileSync(this._abiCachePath, JSON.stringify(this._abiCache, null, 4));
     }
 
     private _getImplDeploymentByAddress(address: string): ContractDeployment {
