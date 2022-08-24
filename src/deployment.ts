@@ -2,7 +2,7 @@ import "@nomiclabs/hardhat-ethers"
 
 import * as crypto from "crypto"
 import { Contract, ContractFactory, Signer, BytesLike } from "ethers";
-import { Interface } from "@ethersproject/abi";
+import { Interface, Fragment } from "@ethersproject/abi";
 import { keccak256 } from "@ethersproject/keccak256";
 import { toUtf8Bytes } from "@ethersproject/strings";
 import { hexlify } from "@ethersproject/bytes";
@@ -94,8 +94,8 @@ export class Deployment {
 
     private constructor(hre: HardhatRuntimeEnvironment, signer: Signer) {
         this._instances = {};
-        this._proxyInstances = {};
-        this._proxyImplInstances = {};
+        this._proxyInstances = {}; // TODO put diamond proxies in here too
+        this._proxyImplInstances = {}; // TODO this but for facets
 
         this._hre = hre;
         this._signer = signer;
@@ -318,9 +318,11 @@ export class Deployment {
             };
         }
 
+        // generate proxy constructor args with callback to project code
         const proxyConstructorArgs = getProxyConstructorArgs ?
             getProxyConstructorArgs(facets) : [];
 
+        // deploy proxy contract
         this._deployedContracts.contracts[id] = await this._deploy(
             contractConfig,
             proxyConstructorArgs,
@@ -328,15 +330,59 @@ export class Deployment {
 
         const deployedDiamond = this._deployedContracts.contracts[id];
 
-        const diamond = new Contract(deployedDiamond.address, diamondAbi, this._signer);
+        // use diamond abi for now, as diamondCut() and facets() may not exist in the proxy
+        // contract, they could be in a facet
+        const diamondProxy = new Contract(deployedDiamond.address, diamondAbi, this._signer);
 
-        // TODO should store an object with all the facets but connected to the proxy, so project code doesn't have to do that manually
-        // TODO also store these instances in the deployment when running so can get them through deployment ref
-
-        const diamondCut = this.calculateDiamondCut(contractConfig.facets, await diamond.facets());
+        // apply diamond cut if needed
+        const diamondCut = this.calculateDiamondCut(contractConfig.facets, await diamondProxy.facets());
         if (diamondCut.length) {
-            await (await diamond.diamondCut(diamondCut, "0x0000000000000000000000000000000000000000", "")).wait();
+            await (await diamondProxy.diamondCut(diamondCut, "0x0000000000000000000000000000000000000000", "")).wait();
         }
+
+        // now create a contract object with an ABI combining that of all the facets
+        const allSelectors = new Set<string>();
+        for (const facet of ((await diamondProxy.facets()) as IDiamondLoupeFacetStruct[])) {
+            for (const selector of facet.functionSelectors) {
+                allSelectors.add(hexlify(selector));
+            }
+        }
+
+        const allIdentifiers = new Set<string>();
+
+        const combinedInterface: Fragment[] =
+            this._getContractInstance(deployedDiamond).interface.fragments.map((fragment) => {
+                if (fragment.type == "function" || fragment.type == "event") {
+                    allIdentifiers.add(fragment.format());
+                }
+                return fragment;
+            });
+
+        for (const facet in facets) {
+            for (const fragment of facets[facet].interface.fragments) {
+                if (fragment.type == "function") {
+                    const sig = fragment.format();
+                    const selector = functionSigToSelector(sig);
+                    if (allSelectors.has(selector)) {
+                        if (!allIdentifiers.has(sig)) {
+                            allIdentifiers.add(sig);
+                            combinedInterface.push(fragment);
+                        }
+                    }
+                }
+                else if (fragment.type == "event") {
+                    const sig = fragment.format();
+                    if (!allIdentifiers.has(sig)) {
+                        allIdentifiers.add(sig);
+                        combinedInterface.push(fragment);
+                    }
+                }
+            }
+        }
+
+        const diamond = new Contract(deployedDiamond.address, combinedInterface, this._signer);
+
+        this._instances[id] = diamond;
 
         return diamond;
     }
@@ -628,9 +674,7 @@ export function getFacets(facets: FacetConfig[], hre: HardhatRuntimeEnvironment)
         const selectorsToIgnore = new Set<string>();
         if (facetConfig.functionsToIgnore) {
             for (const func of facetConfig.functionsToIgnore) {
-                const funcSig = getFunctionSig(func, facetInterface);
-                const hash = keccak256(toUtf8Bytes(funcSig));
-                const selector = hash.substring(0, 10);
+                const selector = functionSigToSelector(getFunctionSig(func, facetInterface));
                 selectorsToIgnore.add(selector);
             }
         }
@@ -641,8 +685,7 @@ export function getFacets(facets: FacetConfig[], hre: HardhatRuntimeEnvironment)
         }
 
         for (const funcSig in facetInterface.functions) {
-            const hash = keccak256(toUtf8Bytes(funcSig));
-            const selector = hash.substring(0, 10);
+            const selector = functionSigToSelector(funcSig);
 
             if (selectorsToIgnore.has(selector)) {
                 continue;
@@ -660,6 +703,11 @@ export function getFacets(facets: FacetConfig[], hre: HardhatRuntimeEnvironment)
     }
 
     return results;
+}
+
+function functionSigToSelector(functionSig: string) {
+    const hash = keccak256(toUtf8Bytes(functionSig));
+    return hash.substring(0, 10);
 }
 
 export enum FacetCutAction {
