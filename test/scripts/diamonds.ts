@@ -27,7 +27,7 @@ async function main() {
         autoUpdate: false,
         facets: facetConfig
     }, (facets) => {
-        const facetCuts = deployment.calculateFacetCuts(facetConfig, []);
+        const diamondCut = deployment.calculateDiamondCut(facetConfig, []);
 
         const diamondFacet = facets["DiamondFacet"] as DiamondFacet;
         const diamondInit: FacetInitialiserStruct = {
@@ -43,7 +43,7 @@ async function main() {
             data: nftFacet.interface.encodeFunctionData("init", ["My Token", "MTKN", "https://baseuri.com"])
         };
 
-        for (const facetCut of facetCuts) {
+        for (const facetCut of diamondCut) {
             if (facetCut.facetAddress == diamondFacet.address) {
                 diamondInit.facetCuts.push({
                     target: facetCut.facetAddress,
@@ -86,7 +86,7 @@ async function main() {
         autoUpdate: false,
         facets: facetConfig
     }, (facets) => {
-        const facetCuts = deployment.calculateFacetCuts(facetConfig, []);
+        const diamondCut = deployment.calculateDiamondCut(facetConfig, []);
 
         const diamondFacet = facets["DiamondFacet"] as DiamondFacet;
         const diamondInit: FacetInitialiserStruct = {
@@ -102,7 +102,7 @@ async function main() {
             data: nftFacet.interface.encodeFunctionData("init", ["My Token", "MTKN", "https://baseuri.com"])
         };
 
-        for (const facetCut of facetCuts) {
+        for (const facetCut of diamondCut) {
             if (facetCut.facetAddress == diamondFacet.address) {
                 diamondInit.facetCuts.push({
                     target: facetCut.facetAddress,

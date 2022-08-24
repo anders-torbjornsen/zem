@@ -333,7 +333,10 @@ export class Deployment {
         // TODO should store an object with all the facets but connected to the proxy, so project code doesn't have to do that manually
         // TODO also store these instances in the deployment when running so can get them through deployment ref
 
-        // TODO calculate and apply any needed cuts here
+        const diamondCut = this.calculateDiamondCut(contractConfig.facets, await diamond.facets());
+        if (diamondCut.length) {
+            await (await diamond.diamondCut(diamondCut, "0x0000000000000000000000000000000000000000", "")).wait();
+        }
 
         return diamond;
     }
@@ -469,7 +472,7 @@ export class Deployment {
             JSON.stringify(this._deployedContracts, null, 4));
     }
 
-    calculateFacetCuts(facets: FacetConfig[], currentFacets: IDiamondLoupeFacetStruct[]): FacetCut[] {
+    calculateDiamondCut(facets: FacetConfig[], currentFacets: IDiamondLoupeFacetStruct[]): FacetCut[] {
         // TODO include a test for autoupdate
         const facetAutoUpdate: { [contract: string]: boolean } = {};
         for (const facet of facets) {
@@ -542,24 +545,24 @@ export class Deployment {
             getOrCreateNeededCuts(selectorToAddress[selector]).add.push(selector);
         }
 
-        const facetCuts: FacetCut[] = [];
+        const diamondCut: FacetCut[] = [];
         for (const address in addressToNeededCuts) {
             if (addressToNeededCuts[address].add.length) {
-                facetCuts.push({
+                diamondCut.push({
                     facetAddress: address,
                     action: FacetCutAction.Add,
                     functionSelectors: addressToNeededCuts[address].add
                 })
             }
             if (addressToNeededCuts[address].update.length) {
-                facetCuts.push({
+                diamondCut.push({
                     facetAddress: address,
                     action: FacetCutAction.Update,
                     functionSelectors: addressToNeededCuts[address].update
                 })
             }
             if (addressToNeededCuts[address].remove.length) {
-                facetCuts.push({
+                diamondCut.push({
                     facetAddress: address,
                     action: FacetCutAction.Remove,
                     functionSelectors: addressToNeededCuts[address].remove
@@ -567,7 +570,7 @@ export class Deployment {
             }
         }
 
-        return facetCuts;
+        return diamondCut;
     }
 }
 
