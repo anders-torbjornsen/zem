@@ -20,18 +20,15 @@ interface ERC1967Deployment extends ContractDeployment {
     implementation: ContractDeployment
 }
 
-// TODO include these in the pruning code
-interface DeployedFacet { // TODO inline this in the facets bit, already enough there as it is
-    address: string;
-    buildInfoId: string;
-}
-
 interface DeployedContracts {
     contracts: { [id: string]: ContractDeployment | ERC1967Deployment };
     facets: { // TODO rename this so it's not diamond specific, and use for erc1967
         byContract: {
             [contract: string]: {
-                [bytecodeHash: string]: DeployedFacet
+                [bytecodeHash: string]: {
+                    address: string;
+                    buildInfoId: string
+                };
             }
         };
         byAddress: {
@@ -478,16 +475,19 @@ export class Deployment {
 
             let usedBuildInfoIds = new Set<string>();
             for (const contractId in this._deployedContracts.contracts) {
-                let contractDeployment =
-                    this._deployedContracts.contracts[contractId];
+                let contractDeployment = this._deployedContracts.contracts[contractId];
 
                 usedBuildInfoIds.add(contractDeployment.buildInfoId);
 
-                let erc1967Deployment =
-                    contractDeployment as ERC1967Deployment;
+                let erc1967Deployment = contractDeployment as ERC1967Deployment;
                 if (erc1967Deployment.implementation) {
-                    usedBuildInfoIds.add(
-                        erc1967Deployment.implementation.buildInfoId);
+                    usedBuildInfoIds.add(erc1967Deployment.implementation.buildInfoId);
+                }
+            }
+
+            for (const contract in this._deployedContracts.facets.byContract) {
+                for (const version in this._deployedContracts.facets.byContract[contract]) {
+                    usedBuildInfoIds.add(this._deployedContracts.facets.byContract[contract][version].buildInfoId);
                 }
             }
 
