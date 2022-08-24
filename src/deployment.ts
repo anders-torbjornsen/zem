@@ -108,9 +108,9 @@ export class Deployment {
         this._implContractsByAddress = {};
         for (const contract in this._deployment.implContracts) {
             for (const bytecodeHash in this._deployment.implContracts[contract]) {
-                const instance = this._deployment.implContracts[contract][bytecodeHash];
+                const contractDeployment = this._deployment.implContracts[contract][bytecodeHash];
 
-                this._implContractsByAddress[instance.address] = {
+                this._implContractsByAddress[contractDeployment.address] = {
                     contract,
                     bytecodeHash
                 }
@@ -259,7 +259,10 @@ export class Deployment {
             ]`);
 
         const currentFacets = this._deployment.contracts[id] ?
-            await (new Contract(this._deployment.contracts[id].address, diamondAbi, this._signer)).facets() as IDiamondLoupeFacetStruct[] : [];
+            await (new Contract(
+                this._deployment.contracts[id].address,
+                diamondAbi,
+                this._signer)).facets() as IDiamondLoupeFacetStruct[] : [];
 
         const currentFacetLookup: { [contract: string]: ContractDeployment } = {};
         for (const currentFacet of currentFacets) {
@@ -278,7 +281,7 @@ export class Deployment {
 
             const deployedFacet = await this._deployImpl(
                 facetConfig,
-                currentDeployedFacet ? currentDeployedFacet.address : undefined)
+                currentDeployedFacet ? currentDeployedFacet.address : undefined);
 
             this._facetInstances[id][facetConfig.contract] = this._getContractInstance(deployedFacet);
         }
@@ -307,15 +310,11 @@ export class Deployment {
         }
 
         // now create a contract object with an ABI combining that of all the facets
-        const allSelectors = new Set<string>();
-        for (const facet of ((await diamondProxy.facets()) as IDiamondLoupeFacetStruct[])) {
-            for (const selector of facet.functionSelectors) {
-                allSelectors.add(hexlify(selector));
-            }
-        }
 
+        // need to keep track of identifiers so we don't end up with duplicates
         const allIdentifiers = new Set<string>();
 
+        // start by copying the interface of the proxy contract as is
         const combinedInterface: Fragment[] =
             proxy.interface.fragments.map((fragment) => {
                 if (fragment.type == "function" || fragment.type == "event") {
@@ -324,12 +323,28 @@ export class Deployment {
                 return fragment;
             });
 
+        // figure out all the selectors which have a facet set for them, used to selectively only
+        // add function fragments to the combined interface if the selector for that fragment is
+        // actually set up on the proxy contract. For example, a facet contract could contain 
+        // functions which are not used by this proxy.
+        const allSelectors = new Set<string>();
+        for (const facet of ((await diamondProxy.facets()) as IDiamondLoupeFacetStruct[])) {
+            for (const selector of facet.functionSelectors) {
+                allSelectors.add(hexlify(selector));
+            }
+        }
+
+        // now merge the facet interfaces
         const facets = this._facetInstances[id];
         for (const facet in facets) {
             for (const fragment of facets[facet].interface.fragments) {
+
                 if (fragment.type == "function") {
                     const sig = fragment.format();
                     const selector = functionSigToSelector(sig);
+
+                    // only add this function to the interface if this selector is one of the ones
+                    // that this proxy will recognise
                     if (allSelectors.has(selector)) {
                         if (!allIdentifiers.has(sig)) {
                             allIdentifiers.add(sig);
@@ -387,7 +402,13 @@ export class Deployment {
             };
         }
 
-        const deployment = await this._deploy(fullyQualifiedContractName, artifact.abi, artifact.bytecode, bytecodeHash, args);
+        const deployment = await this._deploy(
+            fullyQualifiedContractName,
+            artifact.abi,
+            artifact.bytecode,
+            bytecodeHash,
+            args);
+
         console.log(` - deployed | address:${deployment.address}`);
 
         return deployment;
@@ -416,7 +437,13 @@ export class Deployment {
             return currentDeployment;
         }
 
-        currentDeployment = await this._deploy(fullyQualifiedContractName, artifact.abi, artifact.bytecode, bytecodeHash, []);
+        currentDeployment = await this._deploy(
+            fullyQualifiedContractName,
+            artifact.abi,
+            artifact.bytecode,
+            bytecodeHash,
+            []);
+
         console.log(` - deployed | address:${currentDeployment.address} | bytecodeHash:${currentDeployment.bytecodeHash}`);
 
         if (!this._deployment.implContracts[fullyQualifiedContractName]) {
@@ -574,16 +601,23 @@ export class Deployment {
 
     calculateDiamondCut(facets: FacetConfig[], currentFacets: IDiamondLoupeFacetStruct[]): FacetCut[] {
         // TODO proper unit testing
+        // later we will iterate an array of Facet objects, so build a mapping of facet contract to
+        // autoUpdate so it's easy to figure out whether each facet is set to auto update
         const facetAutoUpdate: { [contract: string]: boolean } = {};
         for (const facet of facets) {
             facetAutoUpdate[facet.contract] = facet.autoUpdate || false;
         }
 
+        // build a map of contract name to current facet contract address (if it exists), this 
+        // allows us to later iterate all the needed facets and figure out what we already have 
+        // deployed for that facet (if any) so we know if we need to deploy it
         const currentFacetAddresses: { [contract: string]: string } = {};
         for (const facet of currentFacets) {
             currentFacetAddresses[this._implContractsByAddress[facet.facetAddress].contract] = facet.facetAddress;
         }
 
+        // as we iterate facets we build a map of selector to NEEDED facet address, this is so we
+        // can calculate the needed diamond cut later
         const selectorToAddress: { [selector: string]: string } = {};
         for (const facet of getFacets(facets, this._hre)) {
             const artifact = this._hre.artifacts.readArtifactSync(facet.contract);
@@ -593,9 +627,9 @@ export class Deployment {
 
             if (!facetAddress || facetAutoUpdate[facet.contract]) {
                 const bytecodeHash = getBytecodeHash(artifact);
-                const deployedFacet = this._deployment.implContracts[fullyQualifiedContractName][bytecodeHash];
+                const deployedFacet = this._getImplDeploymentByContract(fullyQualifiedContractName, bytecodeHash);
                 if (!deployedFacet) {
-                    throw new Error(`latest version of '${fullyQualifiedContractName}' contract not found in the deployed facets of deployment`);
+                    throw new Error(`latest version of '${fullyQualifiedContractName}' contract not found in the deployed proxy implementation contracts of deployment`);
                 }
                 facetAddress = deployedFacet.address;
             }
@@ -605,6 +639,7 @@ export class Deployment {
             }
         }
 
+        // this will track what add/update/remove cuts are needed per facet address
         const addressToNeededCuts: {
             [address: string]: {
                 add: string[];
@@ -612,12 +647,18 @@ export class Deployment {
                 remove: string[];
             }
         } = {};
+
+        // convenience function to get the neededCuts object for a given address, but creates an
+        // empty one if it doesn't exist yet
         const getOrCreateNeededCuts = (address: string) => {
             if (!addressToNeededCuts[address]) {
                 addressToNeededCuts[address] = { add: [], update: [], remove: [] };
             }
             return addressToNeededCuts[address];
         };
+
+        // iterate current facets, compare against the needed facet addresses in selectorToAddress
+        // map, those which don't match need to be updated or removed
         for (const currentFacet of currentFacets) {
             for (const functionSelector of currentFacet.functionSelectors) {
                 const selectorStr = hexlify(functionSelector);
@@ -640,6 +681,8 @@ export class Deployment {
             }
         }
 
+        // previous loop deleted all updated selectors from selectorToAddress, so any remaining need
+        // to be added
         for (const selector in selectorToAddress) {
             // add
             getOrCreateNeededCuts(selectorToAddress[selector]).add.push(selector);
@@ -714,7 +757,7 @@ export type Facet = {
 export function getFacets(facets: FacetConfig[], hre: HardhatRuntimeEnvironment) {
     const results: Facet[] = [];
 
-    const allSelectors = new Set<BytesLike>();
+    const allSelectors = new Set<string>();
 
     for (const facetConfig of facets) {
         const facet: Facet = {
