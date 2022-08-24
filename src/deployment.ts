@@ -59,6 +59,9 @@ export class Deployment {
     private _proxyInstances: { [id: string]: Contract };
     private _proxyImplInstances: { [id: string]: Contract };
     private _facetInstances: { [id: string]: { [contract: string]: Contract } };
+    private _abiCache: { [buildInfoId: string]: { [contract: string]: any } };
+    private _solc: any;
+    private _compilers: { [version: string]: any };
 
     public get hre() {
         return this._hre;
@@ -88,6 +91,8 @@ export class Deployment {
         this._proxyInstances = {};
         this._proxyImplInstances = {};
         this._facetInstances = {};
+        this._abiCache = {};
+        this._compilers = {};
 
         this._hre = hre;
         this._signer = signer;
@@ -130,7 +135,7 @@ export class Deployment {
             args,
             this._deployment.contracts[id]);
 
-        const instance = this._getContractInstance(this._deployment.contracts[id]);
+        const instance = await this._getContractInstance(this._deployment.contracts[id]);
 
         this._instances[id] = instance;
         return instance;
@@ -152,7 +157,7 @@ export class Deployment {
             await this._getERC1967ImplementationAddress(contractDeployment.address) : undefined;
 
         const implDeployment = await this._deployImpl(contractConfig.implementation, currentImplAddress);
-        const implementation = this._getContractInstance(implDeployment);
+        const implementation = await this._getContractInstance(implDeployment);
 
         this._deployment.contracts[id] = await this._deployContract(
             contractConfig.proxy,
@@ -161,8 +166,8 @@ export class Deployment {
 
         contractDeployment = this._deployment.contracts[id];
 
-        const proxy = this._getContractInstance(contractDeployment);
-        const instance = this._getContractInstance(implDeployment, contractDeployment.address);
+        const proxy = await this._getContractInstance(contractDeployment);
+        const instance = await this._getContractInstance(implDeployment, contractDeployment.address);
 
         let currentImplementationAddress: string =
             await this._getERC1967ImplementationAddress(contractDeployment.address);
@@ -283,7 +288,7 @@ export class Deployment {
                 facetConfig,
                 currentDeployedFacet ? currentDeployedFacet.address : undefined);
 
-            this._facetInstances[id][facetConfig.contract] = this._getContractInstance(deployedFacet);
+            this._facetInstances[id][facetConfig.contract] = await this._getContractInstance(deployedFacet);
         }
 
         // generate proxy constructor args with callback to project code
@@ -297,7 +302,7 @@ export class Deployment {
             this._deployment.contracts[id]);
 
         const deployedProxy = this._deployment.contracts[id];
-        const proxy = this._getContractInstance(deployedProxy);
+        const proxy = await this._getContractInstance(deployedProxy);
 
         // use diamond abi for now, as diamondCut() and facets() may not exist in the proxy
         // contract, they could be in a facet
@@ -511,10 +516,51 @@ export class Deployment {
         return currentImplementation;
     }
 
-    private _getContractInstance(contractDeployment: ContractDeployment, address?: string): Contract {
-        const [sourceName, contractName] = contractDeployment.contract.split(":");
-        const abi = this._deployment.artifacts[contractDeployment.buildInfoId].output.contracts[sourceName][contractName].abi;
+    private async _getContractInstance(contractDeployment: ContractDeployment, address?: string): Promise<Contract> {
+        const abi = await this._getAbi(contractDeployment.buildInfoId, contractDeployment.contract);
         return new Contract(address || contractDeployment.address, abi, this._signer);
+    }
+
+    private async _getAbi(buildInfoId: string, contract: string) {
+        if (this._abiCache[buildInfoId]) {
+            return this._abiCache[buildInfoId][contract];
+        }
+
+        console.log(`abi not in cache ${contract} from build ${buildInfoId}`);
+
+        const buildInfo = this._deployment.artifacts[buildInfoId];
+        const solcVersion = "v" + buildInfo.solcLongVersion;
+        if (!this._compilers[solcVersion]) {
+            if (!this._solc) {
+                console.log("loading solcjs");
+                this._solc = await require("solc");
+            }
+
+            console.log(`downloading solc ${solcVersion}`);
+
+            this._compilers[solcVersion] = await new Promise((resolve, reject) => {
+                this._solc.loadRemoteVersion(solcVersion, (err: any, solc: any) => {
+                    if (err) {
+                        reject(err);
+                    }
+                    else {
+                        resolve(solc);
+                    }
+                });
+            });
+        }
+
+        console.log(`compiling ${buildInfoId} with solc ${solcVersion}`)
+        const output = JSON.parse(this._compilers[solcVersion].compile(JSON.stringify(buildInfo.input)));
+
+        this._abiCache[buildInfoId] = {};
+        for (const source in output.contracts) {
+            for (const contract in output.contracts[source]) {
+                this._abiCache[buildInfoId][`${source}:${contract}`] = output.contracts[source][contract].abi;
+            }
+        }
+
+        return this._abiCache[buildInfoId][contract];
     }
 
     private _getImplDeploymentByAddress(address: string): ContractDeployment {
@@ -573,21 +619,11 @@ export class Deployment {
                 delete this._deployment.artifacts[toPrune[i]];
             }
 
-            // trim fat from output that we don't use directly in the tool, can always rebuild from
-            // input later
-            // TODO could use solcjs to compile these on demand and cache locally, so they don't
-            // have to pollute source control
+            // TODO copy abis to abi cache on deploy
+
+            // remove output as it's huge, can be rebuilt from input anyway
             for (const buildInfoId in this._deployment.artifacts) {
-
-                const artifact = this._deployment.artifacts[buildInfoId];
-
-                delete (artifact.output as any).sources;
-
-                for (const source in artifact.output.contracts) {
-                    for (const contract in artifact.output.contracts[source]) {
-                        delete (artifact.output.contracts[source][contract] as any).evm;
-                    }
-                }
+                delete (this._deployment.artifacts[buildInfoId] as any).output;
             }
         }
         catch (e) {
