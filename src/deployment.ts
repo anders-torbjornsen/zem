@@ -105,11 +105,11 @@ export class Deployment {
         else {
             this._deployedContracts = {
                 contracts: {},
-                artifacts: {},
                 facets: {
                     byContract: {},
                     byAddress: {}
-                }
+                },
+                artifacts: {}
             };
         }
     }

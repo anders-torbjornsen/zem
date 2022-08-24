@@ -16,6 +16,22 @@
                 "run",
                 "scripts/diamonds.ts"
             ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Diamonds (Ganache)",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/node_modules/hardhat/internal/cli/cli.js",
+            "args": [
+                "run",
+                "scripts/diamonds.ts"
+            ],
+            "env": {
+                "HARDHAT_NETWORK": "ganache"
+            }
         }
     ]
 }
