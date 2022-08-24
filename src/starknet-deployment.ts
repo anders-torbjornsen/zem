@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import fs from "fs";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
-import { ContractDeployConfigStandard } from "./deployment";
+import { ContractDeployConfig } from "./deployment";
 import { Contract, Abi, json } from "starknet";
 import "@playmint/hardhat-starknetjs";
 import { BigNumberish } from "starknet/dist/utils/number";
@@ -36,10 +36,11 @@ export class StarknetDeployment {
     }
 
     public async deploy(
-        contractConfig: ContractDeployConfigStandard,
+        id: string,
+        contractConfig: ContractDeployConfig,
         constructorArgs?: any[],
         addressSalt?: BigNumberish): Promise<Contract> {
-        console.log(`deploying ${contractConfig.id} | ${contractConfig.contract} | autoUpdate=${contractConfig.autoUpdate}`);
+        console.log(`deploying ${id} | ${contractConfig.contract} | autoUpdate=${contractConfig.autoUpdate}`);
 
         const contractFactory =
             await this.hre.starknetjs.getContractFactory(contractConfig.contract);
@@ -48,21 +49,21 @@ export class StarknetDeployment {
         hash.update(json.stringify(contractFactory.compiledContract.program));
         const bytecodeHash = hash.digest("hex");
 
-        const contractJson = this._json.contracts[contractConfig.id];
+        const contractJson = this._json.contracts[id];
         if (contractJson !== undefined) {
-            console.log(`${contractConfig.id} is already deployed at ${contractJson.address}`);
+            console.log(`${id} is already deployed at ${contractJson.address}`);
 
             if (contractJson.contract != contractConfig.contract) {
-                throw `attempting to deploy contract '${contractConfig.contract}' with id '${contractConfig.id}' but existing contract is '${contractJson
+                throw `attempting to deploy contract '${contractConfig.contract}' with id '${id}' but existing contract is '${contractJson
                     .contract}', if that's intentional then change the id of the contract in the deployment json or remote it entirely.`;
             }
 
             if (contractJson.bytecodeHash == bytecodeHash ||
                 !contractConfig.autoUpdate) {
-                this.instances[contractConfig.id] = contractFactory.attach(contractJson.address);
-                return this.instances[contractConfig.id];
+                this.instances[id] = contractFactory.attach(contractJson.address);
+                return this.instances[id];
             }
-            console.log(`${contractConfig.id} is out of date (${contractJson.bytecodeHash}), redeploying (${bytecodeHash})`);
+            console.log(`${id} is out of date (${contractJson.bytecodeHash}), redeploying (${bytecodeHash})`);
         }
 
         let constructorCalldata = undefined;
@@ -80,14 +81,14 @@ export class StarknetDeployment {
 
         console.log("deployed to", instance.address);
 
-        this.instances[contractConfig.id] = instance;
+        this.instances[id] = instance;
 
-        this._json.contracts[contractConfig.id] = {
+        this._json.contracts[id] = {
             contract: contractConfig.contract,
             address: instance.address,
             bytecodeHash: bytecodeHash
         };
-        this._json.abis[contractConfig.id] = contractFactory.compiledContract.abi;
+        this._json.abis[id] = contractFactory.compiledContract.abi;
 
         return instance;
     }
