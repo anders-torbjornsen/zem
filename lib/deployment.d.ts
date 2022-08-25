@@ -1,29 +1,35 @@
 import "@nomiclabs/hardhat-ethers";
-import { Contract, Signer } from "ethers";
+import { Contract, Signer, BytesLike } from "ethers";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
-interface ContractDeployConfig {
+export interface ContractDeployConfig {
     contract: string;
-    autoUpdate: boolean;
-}
-export interface ContractDeployConfigStandard extends ContractDeployConfig {
-    id: string;
+    autoUpdate?: boolean;
 }
 export interface ContractDeployConfigERC1967 {
-    id: string;
     proxy: ContractDeployConfig;
     implementation: ContractDeployConfig;
 }
-export interface ContractDeployConfigDiamond {
-    id: string;
+export interface FacetConfig extends ContractDeployConfig {
+    functionsToIgnore?: string[];
+    selectorsToIgnore?: BytesLike[];
+}
+export interface ContractDeployConfigDiamond extends ContractDeployConfig {
+    facets: FacetConfig[];
 }
 export declare class Deployment {
     private _hre;
     private _signer;
     private _jsonFilePath;
-    private _deployedContracts;
+    private _deployment;
+    private _implContractsByAddress;
     private _instances;
     private _proxyInstances;
     private _proxyImplInstances;
+    private _facetInstances;
+    private _abiCachePath;
+    private _abiCache;
+    private _solc;
+    private _compilers;
     get hre(): HardhatRuntimeEnvironment;
     get signer(): Signer | undefined;
     get instances(): {
@@ -35,13 +41,47 @@ export declare class Deployment {
     get proxyImplInstances(): {
         [id: string]: Contract;
     };
-    constructor(hre: HardhatRuntimeEnvironment, signer?: Signer);
-    deploy(contractConfig: ContractDeployConfigStandard, ...args: any[]): Promise<Contract>;
-    deployERC1967(contractConfig: ContractDeployConfigERC1967, getProxyConstructorArgs: (implementation: Contract) => any[], upgradeFunc: (proxy: Contract, newImplementation: Contract) => Promise<void>): Promise<Contract>;
-    deployDiamond(contractConfig: ContractDeployConfigStandard): Promise<Contract>;
+    get facetInstances(): {
+        [id: string]: {
+            [contract: string]: Contract;
+        };
+    };
+    static create(hre: HardhatRuntimeEnvironment, signer?: Signer): Promise<Deployment>;
+    private constructor();
+    deploy(id: string, contractConfig: ContractDeployConfig, ...args: any[]): Promise<Contract>;
+    deployERC1967(id: string, contractConfig: ContractDeployConfigERC1967, upgradeFunc: (proxy: Contract, newImplementation: Contract) => Promise<void>, getProxyConstructorArgs?: (implementation: Contract) => any[]): Promise<Contract>;
+    deployDiamond(id: string, contractConfig: ContractDeployConfigDiamond, getProxyConstructorArgs?: (facetAddresses: {
+        [contract: string]: Contract;
+    }) => any[]): Promise<Contract>;
+    private _deployContract;
+    private _deployImpl;
     private _deploy;
     private _getERC1967ImplementationAddress;
+    private _getContractInstance;
+    private _getAbi;
+    private _addToAbiCache;
+    private _getImplDeploymentByAddress;
+    private _getImplDeploymentByContract;
     writeToFile(): void;
+    calculateDiamondCut(facets: FacetConfig[], currentFacets: IDiamondLoupeFacetStruct[]): FacetCut[];
 }
-export {};
+export declare type IDiamondLoupeFacetStruct = {
+    facetAddress: string;
+    functionSelectors: BytesLike[];
+};
+export declare type Facet = {
+    contract: string;
+    selectors: BytesLike[];
+};
+export declare function getFacets(facets: FacetConfig[], hre: HardhatRuntimeEnvironment): Facet[];
+export declare enum FacetCutAction {
+    Add = 0,
+    Update = 1,
+    Remove = 2
+}
+export declare type FacetCut = {
+    facetAddress: string;
+    action: FacetCutAction;
+    functionSelectors: BytesLike[];
+};
 //# sourceMappingURL=deployment.d.ts.map
