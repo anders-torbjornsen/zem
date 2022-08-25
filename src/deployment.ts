@@ -194,7 +194,7 @@ export class Deployment {
     async deployDiamond(
         id: string,
         contractConfig: ContractDeployConfigDiamond,
-        getProxyConstructorArgs?: (facetAddresses: { [contract: string]: Contract }) => any[]) {
+        getProxyConstructorArgs?: (facets: { [contract: string]: Contract }) => any[]) {
 
         console.log(`deployDiamond(${id})`);
 

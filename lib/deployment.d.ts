@@ -50,7 +50,7 @@ export declare class Deployment {
     private constructor();
     deploy(id: string, contractConfig: ContractDeployConfig, ...args: any[]): Promise<Contract>;
     deployERC1967(id: string, contractConfig: ContractDeployConfigERC1967, upgradeFunc: (proxy: Contract, newImplementation: Contract) => Promise<void>, getProxyConstructorArgs?: (implementation: Contract) => any[]): Promise<Contract>;
-    deployDiamond(id: string, contractConfig: ContractDeployConfigDiamond, getProxyConstructorArgs?: (facetAddresses: {
+    deployDiamond(id: string, contractConfig: ContractDeployConfigDiamond, getProxyConstructorArgs?: (facets: {
         [contract: string]: Contract;
     }) => any[]): Promise<Contract>;
     private _deployContract;
