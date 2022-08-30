@@ -10,7 +10,7 @@ struct FacetInitialiser {
     bytes data;
 }
 
-contract Diamond is DiamondBase {
+contract DiamondProxyEmpty is DiamondBase {
     using DiamondBaseStorage for DiamondBaseStorage.Layout;
 
     constructor(FacetInitialiser[] memory init) {

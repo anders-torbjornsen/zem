@@ -8,7 +8,7 @@ import { ERC165Storage } from "@solidstate/contracts/introspection/ERC165Storage
 contract DiamondFacet is DiamondReadable, DiamondWritable {
     using ERC165Storage for ERC165Storage.Layout;
 
-    function init() external {
+    function __DiamondFacet_init() external {
         ERC165Storage.Layout storage erc165 = ERC165Storage.layout();
         erc165.setSupportedInterface(type(IDiamondWritable).interfaceId, true);
         erc165.setSupportedInterface(type(IDiamondReadable).interfaceId, true);

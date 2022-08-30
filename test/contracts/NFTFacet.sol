@@ -8,13 +8,11 @@ pragma solidity ^0.8.0;
 import { ERC721Metadata, ERC721MetadataStorage } from "@solidstate/contracts/token/ERC721/metadata/ERC721Metadata.sol";
 import { IERC721, ERC721Base, ERC721BaseInternal } from "@solidstate/contracts/token/ERC721/base/ERC721Base.sol";
 import { ERC165, IERC165, ERC165Storage } from "@solidstate/contracts/introspection/ERC165.sol";
-import { Ownable, OwnableStorage, IERC173 } from "@solidstate/contracts/access/ownable/Ownable.sol";
 
-contract NFTFacet is ERC721Base, ERC721Metadata, ERC165, Ownable {
+contract NFTFacet is ERC721Base, ERC721Metadata, ERC165 {
     using ERC165Storage for ERC165Storage.Layout;
-    using OwnableStorage for OwnableStorage.Layout;
 
-    function init(
+    function __NFTFacet_init(
         string calldata name,
         string calldata symbol,
         string calldata baseURI
@@ -27,9 +25,6 @@ contract NFTFacet is ERC721Base, ERC721Metadata, ERC165, Ownable {
         ERC165Storage.Layout storage erc165 = ERC165Storage.layout();
         erc165.setSupportedInterface(type(IERC165).interfaceId, true);
         erc165.setSupportedInterface(type(IERC721).interfaceId, true);
-        erc165.setSupportedInterface(type(IERC173).interfaceId, true);
-
-        OwnableStorage.layout().setOwner(msg.sender);
     }
 
     function mint(address account, uint256 tokenId) external {

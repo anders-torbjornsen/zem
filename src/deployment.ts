@@ -312,9 +312,13 @@ export class Deployment {
         const diamondProxy = new Contract(deployedProxy.address, diamondAbi, this._signer);
 
         // apply diamond cut if needed
-        const diamondCut = this.calculateDiamondCut(contractConfig.facets, await diamondProxy.facets());
+        const diamondCut = this.calculateDiamondCut(
+            deployedProxy.address,
+            contractConfig.facets,
+            await diamondProxy.facets());
+
         if (diamondCut.length) {
-            await (await diamondProxy.diamondCut(diamondCut, "0x0000000000000000000000000000000000000000", "")).wait();
+            await (await diamondProxy.diamondCut(diamondCut, "0x0000000000000000000000000000000000000000", [])).wait();
         }
 
         // now create a contract object with an ABI combining that of all the facets
@@ -639,7 +643,11 @@ export class Deployment {
             JSON.stringify(this._deployment, null, 4));
     }
 
-    calculateDiamondCut(facets: FacetConfig[], currentFacets: IDiamondLoupeFacetStruct[]): FacetCut[] {
+    calculateDiamondCut(
+        proxyAddress: string,
+        facets: FacetConfig[],
+        currentFacets: IDiamondLoupeFacetStruct[]): FacetCut[] {
+
         // later we will iterate an array of Facet objects, so build a mapping of facet contract to
         // autoUpdate so it's easy to figure out whether each facet is set to auto update
         const facetAutoUpdate: { [contract: string]: boolean } = {};
@@ -647,11 +655,24 @@ export class Deployment {
             facetAutoUpdate[facet.contract] = facet.autoUpdate || false;
         }
 
+        // create a set of immutable selectors so we can throw an error if the user is trying to
+        // change an immutable selector (rather than silently fail)
+        const immutableSelectors = new Set<string>();
+
         // build a map of contract name to current facet contract address (if it exists), this 
         // allows us to later iterate all the needed facets and figure out what we already have 
         // deployed for that facet (if any) so we know if we need to deploy it
         const currentFacetAddresses: { [contract: string]: string } = {};
         for (const facet of currentFacets) {
+            // selectors implemented by the proxy contract are immutable so can't be changed by a cut
+            if (facet.facetAddress == proxyAddress) {
+                for (const immutableSelector of facet.functionSelectors) {
+                    immutableSelectors.add(hexlify(immutableSelector));
+                }
+
+                continue;
+            }
+
             currentFacetAddresses[this._implContractsByAddress[facet.facetAddress].contract] = facet.facetAddress;
         }
 
@@ -659,7 +680,7 @@ export class Deployment {
         // can calculate the needed diamond cut later
         const selectorToAddress: { [selector: string]: string } = {};
         for (const facet of getFacets(facets, this._hre)) {
-            const artifact = this._hre.artifacts.readArtifactSync(facet.contract);
+            const artifact = this._hre.artifacts.readArtifactSync(facet.contract); // TODO agh is this ok???
             const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
 
             let facetAddress = currentFacetAddresses[fullyQualifiedContractName];
@@ -673,8 +694,14 @@ export class Deployment {
                 facetAddress = deployedFacet.address;
             }
 
-            for (const selector of facet.selectors) {
-                selectorToAddress[hexlify(selector)] = facetAddress;
+            for (const func of facet.functions) {
+                const selectorStr = hexlify(func.selector);
+
+                if (immutableSelectors.has(selectorStr)) {
+                    throw new Error(`function '${func.sig}' is immutable, add it to ignored functions in facet config`);
+                }
+
+                selectorToAddress[selectorStr] = facetAddress;
             }
         }
 
@@ -699,6 +726,11 @@ export class Deployment {
         // iterate current facets, compare against the needed facet addresses in selectorToAddress
         // map, those which don't match need to be updated or removed
         for (const currentFacet of currentFacets) {
+            // selectors implemented by the proxy contract are immutable so can't be changed by a cut
+            if (currentFacet.facetAddress == proxyAddress) {
+                continue;
+            }
+
             for (const functionSelector of currentFacet.functionSelectors) {
                 const selectorStr = hexlify(functionSelector);
                 const neededAddress = selectorToAddress[selectorStr];
@@ -751,7 +783,6 @@ export class Deployment {
                 })
             }
         }
-
         return diamondCut;
     }
 }
@@ -790,7 +821,10 @@ function getFunctionSig(func: string, contractInterface: Interface) {
 
 export type Facet = {
     contract: string;
-    selectors: BytesLike[];
+    functions: {
+        sig: string;
+        selector: BytesLike;
+    }[];
 }
 
 export function getFacets(facets: FacetConfig[], hre: HardhatRuntimeEnvironment) {
@@ -801,7 +835,7 @@ export function getFacets(facets: FacetConfig[], hre: HardhatRuntimeEnvironment)
     for (const facetConfig of facets) {
         const facet: Facet = {
             contract: facetConfig.contract,
-            selectors: []
+            functions: []
         };
 
         const artifact = hre.artifacts.readArtifactSync(facetConfig.contract);
@@ -827,7 +861,7 @@ export function getFacets(facets: FacetConfig[], hre: HardhatRuntimeEnvironment)
                 continue;
             }
 
-            facet.selectors.push(selector);
+            facet.functions.push({ sig: funcSig, selector });
 
             if (allSelectors.has(selector)) {
                 throw new Error(`function '${funcSig}' defined in multiple facets`);
