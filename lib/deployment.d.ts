@@ -49,10 +49,10 @@ export declare class Deployment {
     static create(hre: HardhatRuntimeEnvironment, signer?: Signer): Promise<Deployment>;
     private constructor();
     deploy(id: string, contractConfig: ContractDeployConfig, ...args: any[]): Promise<Contract>;
-    deployERC1967(id: string, contractConfig: ContractDeployConfigERC1967, upgradeFunc: (proxy: Contract, newImplementation: Contract) => Promise<void>, getProxyConstructorArgs?: (implementation: Contract) => any[]): Promise<Contract>;
+    deployERC1967(id: string, contractConfig: ContractDeployConfigERC1967, upgradeFunc: (proxy: Contract, newImplementation: Contract) => Promise<void>, getProxyConstructorArgs?: (implementation: Contract) => Promise<any[]>): Promise<Contract>;
     deployDiamond(id: string, contractConfig: ContractDeployConfigDiamond, getProxyConstructorArgs?: (facets: {
         [contract: string]: Contract;
-    }) => any[]): Promise<Contract>;
+    }) => Promise<any[]>): Promise<Contract>;
     private _deployContract;
     private _deployImpl;
     private _deploy;
@@ -63,17 +63,12 @@ export declare class Deployment {
     private _getImplDeploymentByAddress;
     private _getImplDeploymentByContract;
     writeToFile(): void;
-    calculateDiamondCut(facets: FacetConfig[], currentFacets: IDiamondLoupeFacetStruct[]): FacetCut[];
+    calculateDiamondCut(proxyAddress: string, facets: FacetConfig[], currentFacets: IDiamondLoupeFacetStruct[]): Promise<FacetCut[]>;
 }
 export declare type IDiamondLoupeFacetStruct = {
     facetAddress: string;
     functionSelectors: BytesLike[];
 };
-export declare type Facet = {
-    contract: string;
-    selectors: BytesLike[];
-};
-export declare function getFacets(facets: FacetConfig[], hre: HardhatRuntimeEnvironment): Facet[];
 export declare enum FacetCutAction {
     Add = 0,
     Update = 1,
