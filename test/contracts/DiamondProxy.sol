@@ -64,16 +64,23 @@ contract DiamondProxy is
         OwnableStorage.layout().setOwner(msg.sender);
 
         require(
-            initTarget.isContract(),
-            "DiamondProxy: init target has no code"
+            (initTarget == address(0)) == (initData.length == 0),
+            "DiamondProxy: invalid init params"
         );
 
-        (bool success, ) = initTarget.delegatecall(initData);
+        if (initTarget != address(0)) {
+            require(
+                initTarget.isContract(),
+                "DiamondProxy: init target has no code"
+            );
 
-        if (!success) {
-            assembly {
-                returndatacopy(0, 0, returndatasize())
-                revert(0, returndatasize())
+            (bool success, ) = initTarget.delegatecall(initData);
+
+            if (!success) {
+                assembly {
+                    returndatacopy(0, 0, returndatasize())
+                    revert(0, returndatasize())
+                }
             }
         }
     }

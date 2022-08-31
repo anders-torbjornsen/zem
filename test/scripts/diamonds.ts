@@ -1,25 +1,23 @@
-import { Deployment } from "../../src";
+import { Deployment, eip2535DiamondCutToSolidStateDiamondCut, FacetConfig } from "../../src";
 import hre from "hardhat";
 import { DiamondFacet, NFTFacet } from "../typechain-types";
-import { FacetInitialiserStruct } from "../typechain-types/contracts/Diamond";
-import { FacetConfig } from "../../src/deployment";
+import { InitialiserStruct } from "../typechain-types/contracts/DiamondProxyEmpty";
 
 let deployment: Deployment;
 
 async function main() {
     deployment = await Deployment.create(hre);
 
-    // TODO first do a diamond with the non empty proxy
-
+    // deployment of a common diamond contract
     const diamond1 = await deployment.deployDiamond("diamond1", {
         contract: "DiamondProxy",
-        autoUpdate: false,
         facets: [{
             contract: "NFTFacet",
-            functionsToIgnore: ["__NFTFacet_init", "supportsInterface"]
+            functionsToIgnore: ["__NFTFacet_init", "supportsInterface"],
+            autoUpdate: true
         }]
     }, async (facets) => {
-        const nftFacet = facets["NFTFacet"] as NFTFacet;
+        const nftFacet = facets.NFTFacet as NFTFacet;
 
         const initData = nftFacet.interface.encodeFunctionData("__NFTFacet_init", ["My Token", "MTKN", "https://baseuri.com"]);
         return [nftFacet.address, initData];
@@ -35,9 +33,11 @@ async function main() {
         }
     }
 
-
-    // TODO then show with empty proxy, stress this is probably uncommon but you can do it and this is how etc
-
+    // Second example is unlikely to be used by many people, but I wanted to show how to do it. This
+    // is for those who want their DiamondReadable/DiamondWritable (DiamondLoupe/DiamondCut) 
+    // functionality to be implemented by a facet rather than as immutable functions in the proxy.
+    // This will probably mean you want to pass the initial facet cuts to the proxy constructor,
+    // this example shows how you can get zem to calculate the diamond cut for you.
     const facetConfig: FacetConfig[] = [
         {
             contract: "DiamondFacet",
@@ -54,41 +54,24 @@ async function main() {
         autoUpdate: false,
         facets: facetConfig
     }, async (facets) => {
-        const diamondCut = await deployment.calculateDiamondCut("", facetConfig, []);
+        // solid state IDiamondWritable.FacetCut struct is slightly different to 
+        // IDiamondCut.FacetCut, so use this helper to convert between the two
+        const diamondCut = eip2535DiamondCutToSolidStateDiamondCut(
+            await deployment.calculateDiamondCut("", facetConfig, []));
 
-        const diamondFacet = facets["DiamondFacet"] as DiamondFacet;
-        const diamondInit: FacetInitialiserStruct = {
-            facetCuts: [],
+        const diamondFacet = facets.DiamondFacet as DiamondFacet;
+        const diamondInit: InitialiserStruct = {
             target: diamondFacet.address,
             data: diamondFacet.interface.encodeFunctionData("__DiamondFacet_init")
         };
 
-        const nftFacet = facets["NFTFacet"] as NFTFacet;
-        const nftInit: FacetInitialiserStruct = {
-            facetCuts: [],
+        const nftFacet = facets.NFTFacet as NFTFacet;
+        const nftInit: InitialiserStruct = {
             target: nftFacet.address,
             data: nftFacet.interface.encodeFunctionData("__NFTFacet_init", ["My Token", "MTKN", "https://baseuri.com"])
         };
 
-        // TODO simplify this, just have facet cuts and init address/data array
-        for (const facetCut of diamondCut) {
-            if (facetCut.facetAddress == diamondFacet.address) {
-                diamondInit.facetCuts.push({
-                    target: facetCut.facetAddress,
-                    action: facetCut.action,
-                    selectors: facetCut.functionSelectors
-                });
-            }
-            else if (facetCut.facetAddress == nftFacet.address) {
-                nftInit.facetCuts.push({
-                    target: facetCut.facetAddress,
-                    action: facetCut.action,
-                    selectors: facetCut.functionSelectors
-                });
-            }
-        }
-
-        return [[diamondInit, nftInit]];
+        return [diamondCut, [diamondInit, nftInit]];
     });
 
     const nft2 = diamond2 as NFTFacet;

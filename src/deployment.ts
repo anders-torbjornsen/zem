@@ -210,7 +210,7 @@ export class Deployment {
                         "type": "address"
                     },
                     {
-                        "internalType": "enum IDiamondCut.FacetCutAction",
+                        "internalType": "enum IDiamondCut.IDiamondCutFacetCutAction",
                         "name": "action",
                         "type": "uint8"
                     },
@@ -221,7 +221,7 @@ export class Deployment {
                     }
                     ],
                     "internalType": "struct IDiamondCut.FacetCut[]",
-                    "name": "facetCuts",
+                    "name": "_diamondCut",
                     "type": "tuple[]"
                 },
                 {
@@ -271,7 +271,7 @@ export class Deployment {
             await (new Contract(
                 this._deployment.contracts[id].address,
                 diamondAbi,
-                this._signer)).facets() as IDiamondLoupeFacetStruct[] : [];
+                this._signer)).facets() as IDiamondLoupeFacet[] : [];
 
         const currentFacetLookup: { [contract: string]: ContractDeployment } = {};
         for (const currentFacet of currentFacets) {
@@ -332,7 +332,7 @@ export class Deployment {
             }
 
             for (const facetCut of diamondCut) {
-                console.log(` - ${FacetCutAction[facetCut.action]} | ${facetCut.facetAddress}`);
+                console.log(` - ${IDiamondCutFacetCutAction[facetCut.action]} | ${facetCut.facetAddress}`);
                 for (const selector of facetCut.functionSelectors) {
                     const selectorStr = hexlify(selector);
                     console.log(`  - ${selectorLookup[selectorStr] ? `${selectorLookup[selectorStr]} | ` : ""}${selectorStr}`);
@@ -361,7 +361,7 @@ export class Deployment {
         // actually set up on the proxy contract. For example, a facet contract could contain 
         // functions which are not used by this proxy.
         const allSelectors = new Set<string>();
-        for (const facet of ((await diamondProxy.facets()) as IDiamondLoupeFacetStruct[])) {
+        for (const facet of ((await diamondProxy.facets()) as IDiamondLoupeFacet[])) {
             for (const selector of facet.functionSelectors) {
                 allSelectors.add(hexlify(selector));
             }
@@ -667,7 +667,7 @@ export class Deployment {
     async calculateDiamondCut(
         proxyAddress: string,
         facets: FacetConfig[],
-        currentFacets: IDiamondLoupeFacetStruct[]): Promise<FacetCut[]> {
+        currentFacets: IDiamondLoupeFacet[]): Promise<IDiamondCutFacetCut[]> {
 
         // create a set of immutable selectors so we can throw an error if the user is trying to
         // change an immutable selector (rather than silently fail)
@@ -799,26 +799,26 @@ export class Deployment {
             getOrCreateNeededCuts(selectorToAddress[selector]).add.push(selector);
         }
 
-        const diamondCut: FacetCut[] = [];
+        const diamondCut: IDiamondCutFacetCut[] = [];
         for (const address in addressToNeededCuts) {
             if (addressToNeededCuts[address].add.length) {
                 diamondCut.push({
                     facetAddress: address,
-                    action: FacetCutAction.Add,
+                    action: IDiamondCutFacetCutAction.Add,
                     functionSelectors: addressToNeededCuts[address].add
                 })
             }
             if (addressToNeededCuts[address].update.length) {
                 diamondCut.push({
                     facetAddress: address,
-                    action: FacetCutAction.Update,
+                    action: IDiamondCutFacetCutAction.Update,
                     functionSelectors: addressToNeededCuts[address].update
                 })
             }
             if (addressToNeededCuts[address].remove.length) {
                 diamondCut.push({
                     facetAddress: address,
-                    action: FacetCutAction.Remove,
+                    action: IDiamondCutFacetCutAction.Remove,
                     functionSelectors: addressToNeededCuts[address].remove
                 })
             }
@@ -827,7 +827,7 @@ export class Deployment {
     }
 }
 
-export type IDiamondLoupeFacetStruct = {
+export type IDiamondLoupeFacet = {
     facetAddress: string;
     functionSelectors: BytesLike[];
 }
@@ -864,14 +864,28 @@ function functionSigToSelector(functionSig: string) {
     return hash.substring(0, 10);
 }
 
-export enum FacetCutAction {
+// IDiamondCutFacetCutAction as defined in EIP-2535
+export enum IDiamondCutFacetCutAction {
     Add,
     Update,
     Remove
 }
 
-export type FacetCut = {
+// FacetCut as defined in EIP-2535
+export type IDiamondCutFacetCut = {
     facetAddress: string;
-    action: FacetCutAction;
+    action: IDiamondCutFacetCutAction;
     functionSelectors: BytesLike[];
+}
+
+export function eip2535DiamondCutToSolidStateDiamondCut(diamondCut: IDiamondCutFacetCut[]) {
+    return diamondCut.map(facetCut => eip2535FacetCutToSolidstateFacetCut(facetCut));
+}
+
+export function eip2535FacetCutToSolidstateFacetCut(facetCut: IDiamondCutFacetCut) {
+    return {
+        target: facetCut.facetAddress,
+        action: facetCut.action,
+        selectors: facetCut.functionSelectors
+    };
 }
