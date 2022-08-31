@@ -274,6 +274,11 @@ export class Deployment {
 
         const currentFacetLookup: { [contract: string]: ContractDeployment } = {};
         for (const currentFacet of currentFacets) {
+            // make sure this facet isn't the proxy itself (immutable functions)
+            if (currentFacet.facetAddress == this._deployment.contracts[id].address) {
+                continue;
+            }
+
             const facetDeployment = this._getImplDeploymentByAddress(currentFacet.facetAddress);
             currentFacetLookup[facetDeployment.contract] = facetDeployment;
         }
@@ -318,6 +323,7 @@ export class Deployment {
             await diamondProxy.facets());
 
         if (diamondCut.length) {
+            console.log("DIAMOND CUT");
             await (await diamondProxy.diamondCut(diamondCut, "0x0000000000000000000000000000000000000000", [])).wait();
         }
 
