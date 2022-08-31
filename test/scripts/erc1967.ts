@@ -20,7 +20,7 @@ async function main() {
             const tx = (proxy as NFT).upgradeTo(newImplementation.address);
             await (await tx).wait();
         },
-        (implementation) => {
+        async (implementation) => {
             return [implementation.address, (implementation as NFT).interface.encodeFunctionData("init", ["My NFT", "MNFT"])];
         });
 

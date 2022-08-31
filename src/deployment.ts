@@ -149,7 +149,7 @@ export class Deployment {
         contractConfig: ContractDeployConfigERC1967,
         upgradeFunc:
             (proxy: Contract, newImplementation: Contract) => Promise<void>,
-        getProxyConstructorArgs?: (implementation: Contract) => any[]):
+        getProxyConstructorArgs?: (implementation: Contract) => Promise<any[]>):
         Promise<Contract> {
 
         console.log(`deployERC1967(${id})`);
@@ -164,7 +164,7 @@ export class Deployment {
 
         this._deployment.contracts[id] = await this._deployContract(
             contractConfig.proxy,
-            getProxyConstructorArgs ? getProxyConstructorArgs(implementation) : [],
+            getProxyConstructorArgs ? await getProxyConstructorArgs(implementation) : [],
             contractDeployment);
 
         contractDeployment = this._deployment.contracts[id];
@@ -194,7 +194,7 @@ export class Deployment {
     async deployDiamond(
         id: string,
         contractConfig: ContractDeployConfigDiamond,
-        getProxyConstructorArgs?: (facets: { [contract: string]: Contract }) => any[]) {
+        getProxyConstructorArgs?: (facets: { [contract: string]: Contract }) => Promise<any[]>) {
 
         console.log(`deployDiamond(${id})`);
 
@@ -301,7 +301,7 @@ export class Deployment {
 
         // generate proxy constructor args with callback to project code
         const proxyConstructorArgs = getProxyConstructorArgs ?
-            getProxyConstructorArgs(this._facetInstances[id]) : [];
+            await getProxyConstructorArgs(this._facetInstances[id]) : [];
 
         // deploy proxy contract
         this._deployment.contracts[id] = await this._deployContract(
@@ -317,13 +317,36 @@ export class Deployment {
         const diamondProxy = new Contract(deployedProxy.address, diamondAbi, this._signer);
 
         // apply diamond cut if needed
-        const diamondCut = this.calculateDiamondCut(
+        const diamondCut = await this.calculateDiamondCut(
             deployedProxy.address,
             contractConfig.facets,
             await diamondProxy.facets());
 
         if (diamondCut.length) {
-            console.log("DIAMOND CUT");
+            // this next section is all just for logging
+            console.log("- diamondCut");
+
+            const facetSelectorLookup: { [address: string]: { [selector: string]: string } } = {};
+            for (const facetCut of diamondCut) {
+                const facetDeployment = this._getImplDeploymentByAddress(facetCut.facetAddress);
+
+                if (!facetSelectorLookup[facetCut.facetAddress]) {
+                    const iface = new Interface(
+                        await this._getAbi(facetDeployment.buildInfoId, facetDeployment.contract));
+
+                    facetSelectorLookup[facetCut.facetAddress] = {};
+                    for (const func in iface.functions) {
+                        facetSelectorLookup[facetCut.facetAddress][functionSigToSelector(func)] = func;
+                    }
+                }
+
+                console.log(` - ${FacetCutAction[facetCut.action]} | ${facetDeployment.contract} | ${facetCut.facetAddress}`);
+                for (const selector of facetCut.functionSelectors) {
+                    const selectorStr = hexlify(selector);
+                    console.log(`  - ${facetSelectorLookup[facetCut.facetAddress][selectorStr]} | ${selectorStr}`);
+                }
+            }
+
             await (await diamondProxy.diamondCut(diamondCut, "0x0000000000000000000000000000000000000000", [])).wait();
         }
 
@@ -649,26 +672,21 @@ export class Deployment {
             JSON.stringify(this._deployment, null, 4));
     }
 
-    calculateDiamondCut(
+    async calculateDiamondCut(
         proxyAddress: string,
         facets: FacetConfig[],
-        currentFacets: IDiamondLoupeFacetStruct[]): FacetCut[] {
-
-        // later we will iterate an array of Facet objects, so build a mapping of facet contract to
-        // autoUpdate so it's easy to figure out whether each facet is set to auto update
-        const facetAutoUpdate: { [contract: string]: boolean } = {};
-        for (const facet of facets) {
-            facetAutoUpdate[facet.contract] = facet.autoUpdate || false;
-        }
+        currentFacets: IDiamondLoupeFacetStruct[]): Promise<FacetCut[]> {
 
         // create a set of immutable selectors so we can throw an error if the user is trying to
         // change an immutable selector (rather than silently fail)
         const immutableSelectors = new Set<string>();
 
         // build a map of contract name to current facet contract address (if it exists), this 
-        // allows us to later iterate all the needed facets and figure out what we already have 
-        // deployed for that facet (if any) so we know if we need to deploy it
-        const currentFacetAddresses: { [contract: string]: string } = {};
+        // is so we use the correct contract deployment for calculating the facet cut (if a facet is
+        // already deployed and autoUpdate is false for example, we want to continue using a 
+        // potentially outdated version of a contract which may have a different abi from the up to
+        // date one)
+        const currentFacetDeployments: { [contract: string]: ContractDeployment } = {};
         for (const facet of currentFacets) {
             // selectors implemented by the proxy contract are immutable so can't be changed by a cut
             if (facet.facetAddress == proxyAddress) {
@@ -679,35 +697,59 @@ export class Deployment {
                 continue;
             }
 
-            currentFacetAddresses[this._implContractsByAddress[facet.facetAddress].contract] = facet.facetAddress;
+            const deployedFacet = this._getImplDeploymentByAddress(facet.facetAddress);
+            currentFacetDeployments[deployedFacet.contract] = deployedFacet;
         }
 
         // as we iterate facets we build a map of selector to NEEDED facet address, this is so we
         // can calculate the needed diamond cut later
         const selectorToAddress: { [selector: string]: string } = {};
-        for (const facet of getFacets(facets, this._hre)) {
-            const artifact = this._hre.artifacts.readArtifactSync(facet.contract); // TODO agh is this ok???
+
+        for (const facetConfig of facets) {
+            const artifact = this._hre.artifacts.readArtifactSync(facetConfig.contract);
             const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
 
-            let facetAddress = currentFacetAddresses[fullyQualifiedContractName];
+            let deployedFacet: ContractDeployment | undefined = currentFacetDeployments[fullyQualifiedContractName];
 
-            if (!facetAddress || facetAutoUpdate[facet.contract]) {
+            if (!deployedFacet || facetConfig.autoUpdate) {
                 const bytecodeHash = getBytecodeHash(artifact);
-                const deployedFacet = this._getImplDeploymentByContract(fullyQualifiedContractName, bytecodeHash);
+                deployedFacet = this._getImplDeploymentByContract(fullyQualifiedContractName, bytecodeHash);
                 if (!deployedFacet) {
                     throw new Error(`latest version of '${fullyQualifiedContractName}' contract not found in the deployed proxy implementation contracts of deployment`);
                 }
-                facetAddress = deployedFacet.address;
             }
 
-            for (const func of facet.functions) {
-                const selectorStr = hexlify(func.selector);
+            const facetInterface = new Interface(
+                await this._getAbi(deployedFacet.buildInfoId, deployedFacet.contract));
 
-                if (immutableSelectors.has(selectorStr)) {
-                    throw new Error(`function '${func.sig}' is immutable, add it to ignored functions in facet config`);
+            const selectorsToIgnore = new Set<string>();
+            if (facetConfig.functionsToIgnore) {
+                for (const func of facetConfig.functionsToIgnore) {
+                    const selector = functionSigToSelector(getFunctionSig(func, facetInterface));
+                    selectorsToIgnore.add(selector);
+                }
+            }
+            if (facetConfig.selectorsToIgnore) {
+                for (const selector of facetConfig.selectorsToIgnore) {
+                    selectorsToIgnore.add(hexlify(selector));
+                }
+            }
+
+            for (const funcSig in facetInterface.functions) {
+                const selector = functionSigToSelector(funcSig);
+
+                if (selectorsToIgnore.has(selector)) {
+                    continue;
                 }
 
-                selectorToAddress[selectorStr] = facetAddress;
+                if (immutableSelectors.has(selector)) {
+                    throw new Error(`function '${funcSig}' is immutable, add it to ignored functions in facet config`);
+                }
+
+                if (selectorToAddress[selector]) {
+                    throw new Error(`function '${funcSig}' defined in multiple facets`);
+                }
+                selectorToAddress[selector] = deployedFacet.address;
             }
         }
 
@@ -823,62 +865,6 @@ function getFunctionSig(func: string, contractInterface: Interface) {
     else {
         throw new Error(`multiple functions with name '${func}' found in contract interface:\n` + candidates.join("\n"));
     }
-}
-
-export type Facet = {
-    contract: string;
-    functions: {
-        sig: string;
-        selector: BytesLike;
-    }[];
-}
-
-export function getFacets(facets: FacetConfig[], hre: HardhatRuntimeEnvironment) {
-    const results: Facet[] = [];
-
-    const allSelectors = new Set<string>();
-
-    for (const facetConfig of facets) {
-        const facet: Facet = {
-            contract: facetConfig.contract,
-            functions: []
-        };
-
-        const artifact = hre.artifacts.readArtifactSync(facetConfig.contract);
-        const facetInterface = new Interface(artifact.abi);
-
-        const selectorsToIgnore = new Set<string>();
-        if (facetConfig.functionsToIgnore) {
-            for (const func of facetConfig.functionsToIgnore) {
-                const selector = functionSigToSelector(getFunctionSig(func, facetInterface));
-                selectorsToIgnore.add(selector);
-            }
-        }
-        if (facetConfig.selectorsToIgnore) {
-            for (const selector of facetConfig.selectorsToIgnore) {
-                selectorsToIgnore.add(hexlify(selector));
-            }
-        }
-
-        for (const funcSig in facetInterface.functions) {
-            const selector = functionSigToSelector(funcSig);
-
-            if (selectorsToIgnore.has(selector)) {
-                continue;
-            }
-
-            facet.functions.push({ sig: funcSig, selector });
-
-            if (allSelectors.has(selector)) {
-                throw new Error(`function '${funcSig}' defined in multiple facets`);
-            }
-            allSelectors.add(selector);
-        }
-
-        results.push(facet);
-    }
-
-    return results;
 }
 
 function functionSigToSelector(functionSig: string) {

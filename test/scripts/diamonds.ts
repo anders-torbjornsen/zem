@@ -18,7 +18,7 @@ async function main() {
             contract: "NFTFacet",
             functionsToIgnore: ["__NFTFacet_init", "supportsInterface"]
         }]
-    }, (facets) => {
+    }, async (facets) => {
         const nftFacet = facets["NFTFacet"] as NFTFacet;
 
         const initData = nftFacet.interface.encodeFunctionData("__NFTFacet_init", ["My Token", "MTKN", "https://baseuri.com"]);
@@ -53,8 +53,8 @@ async function main() {
         contract: "DiamondProxyEmpty",
         autoUpdate: false,
         facets: facetConfig
-    }, (facets) => {
-        const diamondCut = deployment.calculateDiamondCut("", facetConfig, []);
+    }, async (facets) => {
+        const diamondCut = await deployment.calculateDiamondCut("", facetConfig, []);
 
         const diamondFacet = facets["DiamondFacet"] as DiamondFacet;
         const diamondInit: FacetInitialiserStruct = {
