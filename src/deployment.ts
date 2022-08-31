@@ -4,6 +4,7 @@ import * as crypto from "crypto"
 import { Contract, ContractFactory, Signer, BytesLike } from "ethers";
 import { Interface, Fragment } from "@ethersproject/abi";
 import { ContractInterface } from "@ethersproject/contracts";
+import { AddressZero } from "@ethersproject/constants";
 import { keccak256 } from "@ethersproject/keccak256";
 import { toUtf8Bytes } from "@ethersproject/strings";
 import { hexlify } from "@ethersproject/bytes";
@@ -135,7 +136,7 @@ export class Deployment {
 
         this._deployment.contracts[id] = await this._deployContract(
             contractConfig,
-            args,
+            async () => { return args; },
             this._deployment.contracts[id]);
 
         const instance = await this._getContractInstance(this._deployment.contracts[id]);
@@ -164,7 +165,7 @@ export class Deployment {
 
         this._deployment.contracts[id] = await this._deployContract(
             contractConfig.proxy,
-            getProxyConstructorArgs ? await getProxyConstructorArgs(implementation) : [],
+            async () => { return getProxyConstructorArgs ? getProxyConstructorArgs(implementation) : [] },
             contractDeployment);
 
         contractDeployment = this._deployment.contracts[id];
@@ -299,14 +300,10 @@ export class Deployment {
             this._facetInstances[id][facetConfig.contract] = await this._getContractInstance(deployedFacet);
         }
 
-        // generate proxy constructor args with callback to project code
-        const proxyConstructorArgs = getProxyConstructorArgs ?
-            await getProxyConstructorArgs(this._facetInstances[id]) : [];
-
         // deploy proxy contract
         this._deployment.contracts[id] = await this._deployContract(
             contractConfig,
-            proxyConstructorArgs,
+            async () => { return getProxyConstructorArgs ? getProxyConstructorArgs(this._facetInstances[id]) : [] },
             this._deployment.contracts[id]);
 
         const deployedProxy = this._deployment.contracts[id];
@@ -326,28 +323,23 @@ export class Deployment {
             // this next section is all just for logging
             console.log("- diamondCut");
 
-            const facetSelectorLookup: { [address: string]: { [selector: string]: string } } = {};
-            for (const facetCut of diamondCut) {
-                const facetDeployment = this._getImplDeploymentByAddress(facetCut.facetAddress);
-
-                if (!facetSelectorLookup[facetCut.facetAddress]) {
-                    const iface = new Interface(
-                        await this._getAbi(facetDeployment.buildInfoId, facetDeployment.contract));
-
-                    facetSelectorLookup[facetCut.facetAddress] = {};
-                    for (const func in iface.functions) {
-                        facetSelectorLookup[facetCut.facetAddress][functionSigToSelector(func)] = func;
-                    }
-                }
-
-                console.log(` - ${FacetCutAction[facetCut.action]} | ${facetDeployment.contract} | ${facetCut.facetAddress}`);
-                for (const selector of facetCut.functionSelectors) {
-                    const selectorStr = hexlify(selector);
-                    console.log(`  - ${facetSelectorLookup[facetCut.facetAddress][selectorStr]} | ${selectorStr}`);
+            const selectorLookup: { [selector: string]: string } = {};
+            const facets = this._facetInstances[id];
+            for (const facet in facets) {
+                for (const func in facets[facet].interface.functions) {
+                    selectorLookup[functionSigToSelector(func)] = func;
                 }
             }
 
-            await (await diamondProxy.diamondCut(diamondCut, "0x0000000000000000000000000000000000000000", [])).wait();
+            for (const facetCut of diamondCut) {
+                console.log(` - ${FacetCutAction[facetCut.action]} | ${facetCut.facetAddress}`);
+                for (const selector of facetCut.functionSelectors) {
+                    const selectorStr = hexlify(selector);
+                    console.log(`  - ${selectorLookup[selectorStr] ? `${selectorLookup[selectorStr]} | ` : ""}${selectorStr}`);
+                }
+            }
+
+            await (await diamondProxy.diamondCut(diamondCut, AddressZero, [])).wait();
         }
 
         // now create a contract object with an ABI combining that of all the facets
@@ -413,7 +405,7 @@ export class Deployment {
 
     private async _deployContract(
         contractConfig: ContractDeployConfig,
-        args: any[],
+        getArgs: () => Promise<any[]>, // this is a func so that args are only generated if actually needed
         currentDeployment?: ContractDeployment): Promise<ContractDeployment> {
 
         const artifact: Artifact = this._hre.artifacts.readArtifactSync(contractConfig.contract);
@@ -440,7 +432,7 @@ export class Deployment {
             artifact.abi,
             artifact.bytecode,
             bytecodeHash,
-            args);
+            await getArgs());
 
         console.log(` - deployed | address:${deployment.address}`);
 
@@ -790,7 +782,7 @@ export class Deployment {
                     }
                     else {
                         // remove
-                        getOrCreateNeededCuts(neededAddress).remove.push(selectorStr);
+                        getOrCreateNeededCuts(AddressZero).remove.push(selectorStr);
                     }
                 }
 
