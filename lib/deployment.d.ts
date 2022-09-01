@@ -63,20 +63,30 @@ export declare class Deployment {
     private _getImplDeploymentByAddress;
     private _getImplDeploymentByContract;
     writeToFile(): void;
-    calculateDiamondCut(proxyAddress: string, facets: FacetConfig[], currentFacets: IDiamondLoupeFacetStruct[]): Promise<FacetCut[]>;
+    calculateDiamondCut(proxyAddress: string, facets: FacetConfig[], currentFacets: IDiamondLoupeFacet[]): Promise<IDiamondCutFacetCut[]>;
 }
-export declare type IDiamondLoupeFacetStruct = {
+export declare type IDiamondLoupeFacet = {
     facetAddress: string;
     functionSelectors: BytesLike[];
 };
-export declare enum FacetCutAction {
+export declare enum IDiamondCutFacetCutAction {
     Add = 0,
     Update = 1,
     Remove = 2
 }
-export declare type FacetCut = {
+export declare type IDiamondCutFacetCut = {
     facetAddress: string;
-    action: FacetCutAction;
+    action: IDiamondCutFacetCutAction;
     functionSelectors: BytesLike[];
+};
+export declare function eip2535DiamondCutToSolidStateDiamondCut(diamondCut: IDiamondCutFacetCut[]): {
+    target: string;
+    action: IDiamondCutFacetCutAction;
+    selectors: BytesLike[];
+}[];
+export declare function eip2535FacetCutToSolidstateFacetCut(facetCut: IDiamondCutFacetCut): {
+    target: string;
+    action: IDiamondCutFacetCutAction;
+    selectors: BytesLike[];
 };
 //# sourceMappingURL=deployment.d.ts.map
