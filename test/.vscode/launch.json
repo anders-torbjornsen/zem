@@ -61,6 +61,35 @@
             "env": {
                 "HARDHAT_NETWORK": "ganache"
             }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "library",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/node_modules/hardhat/internal/cli/cli.js",
+            "args": [
+                "run",
+                "scripts/library.ts"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "library (Ganache)",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/node_modules/hardhat/internal/cli/cli.js",
+            "args": [
+                "run",
+                "scripts/library.ts"
+            ],
+            "env": {
+                "HARDHAT_NETWORK": "ganache"
+            }
         }
     ]
 }

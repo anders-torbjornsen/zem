@@ -4,6 +4,7 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 export interface ContractDeployConfig {
     contract: string;
     autoUpdate?: boolean;
+    linkTable?: LinkTable;
 }
 export interface ContractDeployConfigERC1967 {
     proxy: ContractDeployConfig;
@@ -16,6 +17,9 @@ export interface FacetConfig extends ContractDeployConfig {
 export interface ContractDeployConfigDiamond extends ContractDeployConfig {
     facets: FacetConfig[];
 }
+export declare type LinkTable = {
+    [lib: string]: string;
+};
 export declare class Deployment {
     private _hre;
     private _signer;

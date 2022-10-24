@@ -1,6 +1,0 @@
-BasedOnStyle: Google
-IndentWidth: 4
-BreakBeforeBraces: Allman
-JavaScriptQuotes: Double
-BinPackArguments: false
-BinPackParameters: false

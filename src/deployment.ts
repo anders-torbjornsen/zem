@@ -3,13 +3,12 @@ import "@nomiclabs/hardhat-ethers"
 import * as crypto from "crypto"
 import { Contract, ContractFactory, Signer, BytesLike } from "ethers";
 import { Interface, Fragment } from "@ethersproject/abi";
-import { ContractInterface } from "@ethersproject/contracts";
 import { AddressZero } from "@ethersproject/constants";
 import { keccak256 } from "@ethersproject/keccak256";
 import { toUtf8Bytes } from "@ethersproject/strings";
 import { hexlify } from "@ethersproject/bytes";
 import * as fs from "fs";
-import { Artifact, BuildInfo, HardhatRuntimeEnvironment } from "hardhat/types";
+import { Artifact, BuildInfo, HardhatRuntimeEnvironment, LinkReferences } from "hardhat/types";
 
 interface ContractDeployment {
     contract: string;  // fully qualified contract name
@@ -32,8 +31,9 @@ interface DeploymentData {
 }
 
 export interface ContractDeployConfig {
-    contract: string;     // fully qualified contract to use
-    autoUpdate?: boolean;  // whether to auto-redeploy this when it has changed
+    contract: string;       // fully qualified contract to use
+    autoUpdate?: boolean;   // whether to auto-redeploy this when it has changed
+    linkTable?: LinkTable;  // if any libraries need to be linked with then specify here
 }
 
 export interface ContractDeployConfigERC1967 {
@@ -49,6 +49,8 @@ export interface FacetConfig extends ContractDeployConfig {
 export interface ContractDeployConfigDiamond extends ContractDeployConfig {
     facets: FacetConfig[];
 }
+
+export type LinkTable = { [lib: string]: string };
 
 export class Deployment {
     private _hre: HardhatRuntimeEnvironment;
@@ -288,7 +290,7 @@ export class Deployment {
         for (const facetConfig of contractConfig.facets) {
             // have to work with fully qualified contract names
             const artifact = this._hre.artifacts.readArtifactSync(facetConfig.contract);
-            const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
+            const fullyQualifiedContractName = getFullyQualifiedContractName(artifact);
 
             const currentDeployedFacet = facetConfig.autoUpdate ?
                 undefined : currentFacetLookup[fullyQualifiedContractName];
@@ -409,11 +411,11 @@ export class Deployment {
         currentDeployment?: ContractDeployment): Promise<ContractDeployment> {
 
         const artifact: Artifact = this._hre.artifacts.readArtifactSync(contractConfig.contract);
-        const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
+        const fullyQualifiedContractName = getFullyQualifiedContractName(artifact);
 
         console.log(`- deploy contract | ${fullyQualifiedContractName} | autoUpdate:${contractConfig.autoUpdate || false}`);
 
-        const bytecodeHash = getBytecodeHash(artifact);
+        const bytecodeHash = getBytecodeHash(artifact, contractConfig.linkTable);
 
         if (currentDeployment) {
             console.log(` - already deployed | address:${currentDeployment.address}`);
@@ -428,10 +430,8 @@ export class Deployment {
         }
 
         const deployment = await this._deploy(
-            fullyQualifiedContractName,
-            artifact.abi,
-            artifact.bytecode,
-            bytecodeHash,
+            artifact,
+            contractConfig.linkTable,
             await getArgs());
 
         console.log(` - deployed | address:${deployment.address}`);
@@ -442,8 +442,8 @@ export class Deployment {
     private async _deployImpl(contractConfig: ContractDeployConfig, currentAddress: string | undefined) {
         // have to work with fully qualified contract names
         const artifact = this._hre.artifacts.readArtifactSync(contractConfig.contract);
-        const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
-        const bytecodeHash = getBytecodeHash(artifact);
+        const fullyQualifiedContractName = getFullyQualifiedContractName(artifact);
+        const bytecodeHash = getBytecodeHash(artifact, contractConfig.linkTable);
 
         console.log(`- deploy impl contract | ${fullyQualifiedContractName} | autoUpdate:${contractConfig.autoUpdate || false}`)
 
@@ -463,10 +463,8 @@ export class Deployment {
         }
 
         currentDeployment = await this._deploy(
-            fullyQualifiedContractName,
-            artifact.abi,
-            artifact.bytecode,
-            bytecodeHash,
+            artifact,
+            contractConfig.linkTable,
             []);
 
         console.log(` - deployed | address:${currentDeployment.address} | bytecodeHash:${currentDeployment.bytecodeHash}`);
@@ -489,11 +487,11 @@ export class Deployment {
     }
 
     private async _deploy(
-        fullyQualifiedContractName: string,
-        contractInterface: ContractInterface,
-        bytecode: string,
-        bytecodeHash: string,
+        artifact: Artifact,
+        linkTable: LinkTable | undefined,
         args: any[]): Promise<ContractDeployment> {
+
+        const fullyQualifiedContractName = getFullyQualifiedContractName(artifact);
 
         const buildInfo: BuildInfo | undefined =
             await this._hre.artifacts.getBuildInfo(fullyQualifiedContractName);
@@ -504,7 +502,9 @@ export class Deployment {
             this._deployment.artifacts[buildInfo.id] = buildInfo;
         }
 
-        const contractFactory = new ContractFactory(contractInterface, bytecode, this._signer);
+        const bytecode = linkBytecode(artifact.bytecode, artifact.linkReferences, linkTable);
+
+        const contractFactory = new ContractFactory(artifact.abi, bytecode, this._signer);
         const instance: Contract =
             await (await contractFactory.deploy(...args)).deployed();
 
@@ -515,7 +515,7 @@ export class Deployment {
         return {
             contract: fullyQualifiedContractName,
             address: instance.address,
-            bytecodeHash,
+            bytecodeHash: getBytecodeHash(artifact, linkTable),
             buildInfoId: buildInfo.id
         };
     }
@@ -699,12 +699,12 @@ export class Deployment {
 
         for (const facetConfig of facets) {
             const artifact = this._hre.artifacts.readArtifactSync(facetConfig.contract);
-            const fullyQualifiedContractName = `${artifact.sourceName}:${artifact.contractName}`;
+            const fullyQualifiedContractName = getFullyQualifiedContractName(artifact);
 
             let deployedFacet: ContractDeployment | undefined = currentFacetDeployments[fullyQualifiedContractName];
 
             if (!deployedFacet || facetConfig.autoUpdate) {
-                const bytecodeHash = getBytecodeHash(artifact);
+                const bytecodeHash = getBytecodeHash(artifact, facetConfig.linkTable);
                 deployedFacet = this._getImplDeploymentByContract(fullyQualifiedContractName, bytecodeHash);
                 if (!deployedFacet) {
                     throw new Error(`latest version of '${fullyQualifiedContractName}' contract not found in the deployed proxy implementation contracts of deployment`);
@@ -832,10 +832,41 @@ export type IDiamondLoupeFacet = {
     functionSelectors: BytesLike[];
 }
 
-function getBytecodeHash(artifact: Artifact) {
+function getFullyQualifiedContractName(artifact: Artifact) {
+    return `${artifact.sourceName}:${artifact.contractName}`;
+}
+
+function getBytecodeHash(artifact: Artifact, linkTable: LinkTable | undefined) {
+    const deployedBytecode = linkBytecode(artifact.deployedBytecode, artifact.deployedLinkReferences, linkTable);
     const hash = crypto.createHash("sha256");
-    hash.update(artifact.deployedBytecode);
+    hash.update(deployedBytecode);
     return hash.digest("hex");
+}
+
+function linkBytecode(bytecode: string, linkReferences: LinkReferences, linkTable: LinkTable | undefined) {
+    const bytecodeArray = bytecode.split('');
+    for (const file in linkReferences) {
+        for (const lib in linkReferences[file]) {
+            if (!linkTable) {
+                throw new Error(`No link table, trying to link '${lib}'`);
+            }
+
+            if (!linkTable[lib]) {
+                throw new Error(`No entry in link table for lib '${lib}'`);
+            }
+
+            const libAddress = linkTable[lib].startsWith("0x") ? linkTable[lib].substring(2) : linkTable[lib];
+
+            for (const instance of linkReferences[file][lib]) {
+                const strOffset = (instance.start * 2) + 2; // add 2 for the 0x
+                for (let i = 0; i < 40; ++i) {
+                    bytecodeArray[strOffset + i] = libAddress[i];
+                }
+            }
+        }
+    }
+
+    return bytecodeArray.join("");
 }
 
 function getFunctionSig(func: string, contractInterface: Interface) {
